@@ -1,0 +1,194 @@
+import expat.*;
+import maybe.*;
+import http.*;
+
+var mixesUrl = just(parseUrl("http://8tracks.com/mixes.xml"));
+var playtokenUrl = just(parseUrl("http://8tracks.com/sets/new.xml"));
+
+playUrl(playtoken, mixId) {
+    return just(parseUrl("http://8tracks.com/sets/" + playtoken
+        + "/play.xml?mix_id=" + mixId));
+}
+
+record Mix (
+    path: String,
+    slug: String,
+    name: String,
+    tagListCach: Vector[String],
+    playsCount: Int,
+    description: String,
+    id: String,
+);
+overload Mix() = Mix(String(), String(), String(), Vector[String](), 0, String(), String());
+
+record Track (
+    releaseName: String,
+    name: String,
+    performer: String,
+    id: String,
+    url: String,
+);
+
+private var mixes = Vector[Mix]();
+private var currentMix = Mix();
+private var characterDataStream = nothing(Pointer[String]);
+private var myBuffer = String();
+private var parsingUser = false;
+
+private external characterDataHandler(data: RawPointer, s: Pointer[XML_Char], len: Int) {
+    if (just?(characterDataStream)) {
+        write(just(characterDataStream)^, Pointer[Byte](s), SizeT(len));
+    }
+}
+
+private external mixesStartHandler(data: RawPointer, _name: Pointer[XML_Char], attrs: Pointer[Pointer[XML_Char]]) {
+
+    var name = String(_name);
+    if (name == "mix") {
+        currentMix = Mix();
+    } else if (name == "path") {
+        characterDataStream = Maybe(&currentMix.path);
+    } else if (name == "slug") {
+        characterDataStream = Maybe(&currentMix.slug);
+    } else if (name == "name") {
+        characterDataStream = Maybe(&currentMix.name);
+    } else if (name == "description") {
+        characterDataStream = Maybe(&currentMix.description);
+    } else if (name == "user") {
+        parsingUser = true;
+    } else if (name == "id" and not(parsingUser)) {
+        characterDataStream = Maybe(&currentMix.id);
+    } else if (name == "plays-count") {
+        myBuffer = String();
+        characterDataStream = Maybe(&myBuffer);
+    }
+}
+
+private external mixesEndHandler(data: RawPointer, _name: Pointer[XML_Char]) {
+    var name = String(_name);
+    if (name == "mix") {
+        push(mixes, currentMix);
+    } else if (name == "path" or name == "slug" or name == "name"
+        or name == "description" or name == "id") {
+
+        characterDataStream = nothing(Pointer[String]);
+    } else if (name == "plays-count") {
+        currentMix.playsCount = Int(just(characterDataStream)^);
+        characterDataStream = nothing(Pointer[String]);
+    } else if (name == "user") {
+        parsingUser = false;
+    }
+}
+
+private setupMixesParser() {
+    mixes = Vector[Mix]();
+    parsingUser = false;
+
+    var parser = XML_ParserCreate(null(XML_Char));
+    XML_SetElementHandler(parser, mixesStartHandler, mixesEndHandler);
+    XML_SetCharacterDataHandler(parser, characterDataHandler);
+    return parser;
+}
+
+parseMixes(stream) {
+    var parser = setupMixesParser();
+    while (true) {
+        alias bufsize = SizeT(4096);
+        var buf = XML_GetBuffer(parser, Int32(bufsize));
+        if (buf == Type(buf)(0)) {
+            error("could not get buffer from parser");
+        }
+
+        var bytesRead = Int32(read(stream, Pointer[Byte](buf), bufsize));
+        var last = bytesRead == 0;
+
+        var success = XML_ParseBuffer(parser, bytesRead, if (last) 1 else 0) != 0;
+        println("parsing was ", if (success) "" else "not ", "successful");
+        if (last) {
+            break;
+        }
+    }
+
+    XML_ParserFree(parser);
+
+    return move(mixes);
+}
+
+overload parseMixes(string) {
+    var parser = setupMixesParser();
+    var success = XML_Parse(parser, cstring(string), Int32(size(string)), 1) != 0;
+    println("parsing was ", if (success) "" else "not ", "successful");
+    XML_ParserFree(parser);
+    return move(mixes);
+}
+
+private external playtokenStartHandler(data: RawPointer, _name: Pointer[XML_Char], attrs: Pointer[Pointer[XML_Char]]) {
+    
+    var name = String(_name);
+    if (name == "play-token") {
+        characterDataStream = Maybe(Pointer[String](data));
+    }
+}
+
+private external playtokenEndHandler(data: RawPointer, _name: Pointer[XML_Char]) {
+    var name = String(_name);
+    if (name == "play-token") {
+        characterDataStream = nothing(Pointer[String]);
+    }
+}
+
+parsePlaytoken(string) {
+    var playtoken = String();
+
+    var parser = XML_ParserCreate(null(XML_Char));
+    XML_SetElementHandler(parser, playtokenStartHandler, playtokenEndHandler);
+    XML_SetCharacterDataHandler(parser, characterDataHandler);
+    XML_SetUserData(parser, RawPointer(&playtoken));
+
+    var success = XML_Parse(parser, cstring(string), Int32(size(string)), 1) != 0;
+    println("parsing was ", if (success) "" else "not ", "successful");
+    XML_ParserFree(parser);
+    
+    return move(playtoken);
+}
+
+private external trackStartHandler(data: RawPointer, _name: Pointer[XML_Char], attrs: Pointer[Pointer[XML_Char]]) {
+
+    var name = String(_name);
+    var track = Pointer[Track](data);
+    if (name == "release-name") {
+        characterDataStream = Maybe(&track^.releaseName);
+    } else if (name == "name") {
+        characterDataStream = Maybe(&track^.name);
+    } else if (name == "performer") {
+        characterDataStream = Maybe(&track^.performer);
+    } else if (name == "id") {
+        characterDataStream = Maybe(&track^.id);
+    } else if (name == "url") {
+        characterDataStream = Maybe(&track^.url);
+    }
+}
+
+private external trackEndHandler(data: RawPointer, _name: Pointer[XML_Char]) {
+    var name = String(_name);
+    if (name == "release-name" or name == "performer" or name == "id"
+        or name == "url") {
+
+        characterDataStream = nothing(Pointer[String]);
+    }
+}
+
+parseTrack(string) {
+    var track = Track();
+
+    var parser = XML_ParserCreate(null(XML_Char));
+    XML_SetElementHandler(parser, trackStartHandler, trackEndHandler);
+    XML_SetCharacterDataHandler(parser, characterDataHandler);
+    XML_SetUserData(parser, RawPointer(&track));
+
+    var success = XML_Parse(parser, cstring(string), Int32(size(string)), 1) != 0;
+    println("parsing was ", if (success) "" else "not ", "successful");
+    XML_ParserFree(parser);
+    
+    return move(track);
+}

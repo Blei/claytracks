@@ -1,0 +1,71 @@
+import api.*;
+import http.*;
+import maybe.*;
+import gstreamer.*;
+import glib.*;
+import gobject.*;
+
+private external watchBus(bus: Pointer[GstBus], message: Pointer[GstMessage], data: gpointer) gboolean {
+
+    var msgType = message^.type;
+    println(String(gst_message_type_get_name(msgType)));
+
+    if (msgType == GST_MESSAGE_ERROR) {
+        var err = null(GError);
+        var debugInfo = null(gchar);
+        gst_message_parse_error(message, &err, &debugInfo);
+        println("Error: ", String(err^.message));
+        println("debug info: ", String(debugInfo));
+        g_error_free(err);
+        g_free(gpointer(debugInfo));
+
+        //gst_element_set_state(playbin, GST_STATE_NULL);
+    }
+
+    return TRUE;
+}
+
+main() {
+    var req = GetRequest();
+    var sock = sendRequest(req, mixesUrl);
+    var resp = parseResponse(sock, req);
+    var mixes = parseMixes(resp.body);
+    
+    var chosenMix = mixes[0];
+    println(chosenMix);
+
+    req = GetRequest();
+    var sock = sendRequest(req, playtokenUrl);
+    resp = parseResponse(sock, req);
+    var playtoken = parsePlaytoken(resp.body);
+    println("play token is ", playtoken);
+
+    req = GetRequest();
+    var url = playUrl(playtoken, chosenMix.id);
+    println(url.path);
+    var sock = sendRequest(req, url);
+    resp = parseResponse(sock, req);
+    var track = parseTrack(resp.body);
+    println(track);
+
+
+    // let's get some sound going on!
+    var argc, argv = ...getArgcArgv();
+    gst_init(&argc, &argv);
+
+    var playbin = gst_element_factory_make(cstring("playbin2"), cstring("play"));
+
+    var bus = gst_pipeline_get_bus(Pointer[GstPipeline](playbin));
+    gst_bus_add_watch(bus, GstBusFunc(watchBus), gpointer(0));
+    gst_object_unref(gpointer(bus));
+
+    g_object_set(gpointer(playbin), cstring("uri"), cstring(track.url), 0);
+    gst_element_set_state(playbin, GST_STATE_PLAYING);
+
+    var loop = g_main_loop_new(gpointer(0), FALSE);
+    g_main_loop_run(loop);
+
+    // cleanup
+    gst_element_set_state(playbin, GST_STATE_NULL);
+    gst_object_unref(gpointer(playbin));
+}
