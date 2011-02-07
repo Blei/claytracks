@@ -4,6 +4,7 @@ import maybe.*;
 import gstreamer.*;
 import glib.*;
 import gobject.*;
+import gtk.*;
 
 private external watchBus(bus: Pointer[GstBus], message: Pointer[GstMessage], data: gpointer) gboolean {
 
@@ -25,45 +26,67 @@ private external watchBus(bus: Pointer[GstBus], message: Pointer[GstMessage], da
     return TRUE;
 }
 
-main() {
-    var req = GetRequest();
-    var sock = sendRequest(req, mixesUrl);
-    var resp = parseResponse(sock, req);
-    var mixes = parseMixes(resp.body);
-    
-    var chosenMix = mixes[0];
-    println(chosenMix);
+private external destroying(widget: Pointer[GtkWidget], data: gpointer) {
+    gtk_main_quit();
+}
 
-    req = GetRequest();
-    var sock = sendRequest(req, playtokenUrl);
-    resp = parseResponse(sock, req);
-    var playtoken = parsePlaytoken(resp.body);
-    println("play token is ", playtoken);
-
-    req = GetRequest();
-    var url = playUrl(playtoken, chosenMix.id);
-    println(url.path);
-    var sock = sendRequest(req, url);
-    resp = parseResponse(sock, req);
-    var track = parseTrack(resp.body);
+private external clickedPlay(button: Pointer[GtkButton], data: gpointer) {
+    var mix = Pointer[Mix](data);
+    var track = getTrack(playtoken, mix^);
     println(track);
+    playTrack(track);
+}
 
+private playTrack(track) {
+    gst_element_set_state(playbin, GST_STATE_NULL);
+    g_object_set(gpointer(playbin), cstring("uri"), cstring(track.url), 0);
+    gst_element_set_state(playbin, GST_STATE_PLAYING);
+}
+
+private var playbin = Pointer[GstElement](0);
+private var playtoken = String();
+
+main() {
+    var mixes = getMixes();
+    
+    playtoken = getPlaytoken();
+    println("play token is ", playtoken);
 
     // let's get some sound going on!
     var argc, argv = ...getArgcArgv();
     gst_init(&argc, &argv);
 
-    var playbin = gst_element_factory_make(cstring("playbin2"), cstring("play"));
+    playbin = gst_element_factory_make(cstring("playbin2"), cstring("play"));
 
     var bus = gst_pipeline_get_bus(Pointer[GstPipeline](playbin));
     gst_bus_add_watch(bus, GstBusFunc(watchBus), gpointer(0));
     gst_object_unref(gpointer(bus));
+    
+    // gui ftw
+    gtk_init(&argc, &argv);
 
-    g_object_set(gpointer(playbin), cstring("uri"), cstring(track.url), 0);
-    gst_element_set_state(playbin, GST_STATE_PLAYING);
+    var window = gtk_window_new(GTK_WINDOW_TOPLEVEL);
+    gtk_window_set_title(Pointer[GtkWindow](window), cstring("Cl8tracks"));
+    gSignalConnect(window, cstring("destroy"),
+        GCallback(destroying), gpointer(0));
 
-    var loop = g_main_loop_new(gpointer(0), FALSE);
-    g_main_loop_run(loop);
+    var vbox = gtk_vbox_new(TRUE, 5);
+    gtk_container_add(Pointer[GtkContainer](window), Pointer[GtkWidget](vbox));
+
+    for (mix in mixes) {
+        var hbox = gtk_hbox_new(FALSE, 5);
+        gtk_container_add(Pointer[GtkContainer](vbox), Pointer[GtkWidget](hbox));
+        var label = gtk_label_new(cstring(mix.name));
+        gtk_container_add(Pointer[GtkContainer](hbox), Pointer[GtkWidget](label));
+        var button = gtk_button_new_with_label(cstring("Play"));
+        gtk_container_add(Pointer[GtkContainer](hbox), Pointer[GtkWidget](button));
+        gSignalConnect(button, cstring("clicked"),
+            GCallback(clickedPlay), gpointer(&mix));
+    }
+
+    gtk_widget_show_all(Pointer[GtkWidget](window));
+
+    gtk_main();
 
     // cleanup
     gst_element_set_state(playbin, GST_STATE_NULL);

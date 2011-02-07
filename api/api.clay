@@ -122,6 +122,13 @@ overload parseMixes(string) {
     return move(mixes);
 }
 
+getMixes() {
+    var req = GetRequest();
+    var sock = sendRequest(req, mixesUrl);
+    var resp = parseResponse(sock, req);
+    return move(parseMixes(resp.body));
+}
+
 private external playtokenStartHandler(data: RawPointer, _name: Pointer[XML_Char], attrs: Pointer[Pointer[XML_Char]]) {
     
     var name = String(_name);
@@ -150,6 +157,13 @@ parsePlaytoken(string) {
     XML_ParserFree(parser);
     
     return move(playtoken);
+}
+
+getPlaytoken() {
+    var req = GetRequest();
+    var sock = sendRequest(req, playtokenUrl);
+    var resp = parseResponse(sock, req);
+    return move(parsePlaytoken(resp.body));
 }
 
 private external trackStartHandler(data: RawPointer, _name: Pointer[XML_Char], attrs: Pointer[Pointer[XML_Char]]) {
@@ -191,4 +205,13 @@ parseTrack(string) {
     XML_ParserFree(parser);
     
     return move(track);
+}
+
+getTrack(playtoken, mix) {
+    var req = GetRequest();
+    var url = playUrl(playtoken, mix.id);
+    //println(url.path);
+    var sock = sendRequest(req, url);
+    var resp = parseResponse(sock, req);
+    return move(parseTrack(resp.body));
 }
