@@ -2,7 +2,9 @@ import expat.*;
 import maybe.*;
 import http.*;
 
-var mixesUrl = just(parseUrl("http://8tracks.com/mixes.xml"));
+// apparently the default url doesn't give the most recent tracks when not logged
+// in?
+var mixesUrl = just(parseUrl("http://8tracks.com/mixes.xml?sort=recent"));
 var playtokenUrl = just(parseUrl("http://8tracks.com/sets/new.xml"));
 
 playUrl(playtoken, mixId) {
@@ -18,8 +20,10 @@ record Mix (
     playsCount: Int,
     description: String,
     id: String,
+    originalCoverUrl: String,
 );
-overload Mix() = Mix(String(), String(), String(), Vector[String](), 0, String(), String());
+overload Mix() = Mix(String(), String(), String(), Vector[String](), 0,
+    String(), String(), String());
 
 record Track (
     releaseName: String,
@@ -34,6 +38,7 @@ private var currentMix = Mix();
 private var characterDataStream = nothing(Pointer[String]);
 private var myBuffer = String();
 private var parsingUser = false;
+private var parsingCoverUrls = false;
 
 private external characterDataHandler(data: RawPointer, s: Pointer[XML_Char], len: Int) {
     if (just?(characterDataStream)) {
@@ -61,6 +66,10 @@ private external mixesStartHandler(data: RawPointer, _name: Pointer[XML_Char], a
     } else if (name == "plays-count") {
         myBuffer = String();
         characterDataStream = Maybe(&myBuffer);
+    } else if (name == "cover-urls") {
+        parsingCoverUrls = true;
+    } else if (name == "original" and parsingCoverUrls) {
+        characterDataStream = Maybe(&currentMix.originalCoverUrl);
     }
 }
 
@@ -69,7 +78,7 @@ private external mixesEndHandler(data: RawPointer, _name: Pointer[XML_Char]) {
     if (name == "mix") {
         push(mixes, currentMix);
     } else if (name == "path" or name == "slug" or name == "name"
-        or name == "description" or name == "id") {
+        or name == "description" or name == "id" or name == "original") {
 
         characterDataStream = nothing(Pointer[String]);
     } else if (name == "plays-count") {
@@ -77,6 +86,8 @@ private external mixesEndHandler(data: RawPointer, _name: Pointer[XML_Char]) {
         characterDataStream = nothing(Pointer[String]);
     } else if (name == "user") {
         parsingUser = false;
+    } else if (name == "cover-urls") {
+        parsingCoverUrls = false;
     }
 }
 
