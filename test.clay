@@ -69,24 +69,28 @@ main() {
 
     var window = gtk_window_new(GTK_WINDOW_TOPLEVEL);
     gtk_window_set_title(Pointer[GtkWindow](window), cstring("Cl8tracks"));
+    gtk_window_set_default_size(Pointer[GtkWindow](window), 500, 600);
     gSignalConnect(window, cstring("destroy"),
         GCallback(destroying), gpointer(0));
 
-    var vbox = gtk_vbox_new(TRUE, 5);
-    gtk_container_add(Pointer[GtkContainer](window), Pointer[GtkWidget](vbox));
+    var scrolledWindow = gtk_scrolled_window_new(null(GtkAdjustment), null(GtkAdjustment));
+    gtk_scrolled_window_set_policy(Pointer[GtkScrolledWindow](scrolledWindow),
+        GTK_POLICY_AUTOMATIC, GTK_POLICY_AUTOMATIC);
+    gtk_container_add(Pointer[GtkContainer](window), Pointer[GtkWidget](scrolledWindow));
+
+    var vbox = gtk_vbox_new(FALSE, 5);
+    gtk_scrolled_window_add_with_viewport(
+        Pointer[GtkScrolledWindow](scrolledWindow), Pointer[GtkWidget](vbox));
 
     for (mix in mixes) {
         var hbox = gtk_hbox_new(FALSE, 5);
         gtk_container_add(Pointer[GtkContainer](vbox), Pointer[GtkWidget](hbox));
         var label = gtk_label_new(cstring(mix.name));
-        gtk_container_add(Pointer[GtkContainer](hbox), Pointer[GtkWidget](label));
-        var button = gtk_button_new_with_label(cstring("Play"));
-        gtk_container_add(Pointer[GtkContainer](hbox), Pointer[GtkWidget](button));
-        gSignalConnect(button, cstring("clicked"),
-            GCallback(clickedPlay), gpointer(&mix));
+        gtk_box_pack_start(Pointer[GtkBox](hbox), Pointer[GtkWidget](label),
+            TRUE, FALSE, UInt32(0));
 
-        println("cover url is ", mix.originalCoverUrl);
-        var url = just(parseUrl(mix.originalCoverUrl));
+        println("cover url is ", mix.sq133CoverUrl);
+        var url = just(parseUrl(mix.sq133CoverUrl));
         var req = GetRequest();
         var sock = sendRequest(req, url);
         var resp = parseResponse(sock, req);
@@ -104,7 +108,16 @@ main() {
         }
 
         var imageWidget = gtk_image_new_from_pixbuf(image);
-        gtk_container_add(Pointer[GtkContainer](hbox), Pointer[GtkWidget](imageWidget));
+        gtk_box_pack_end(Pointer[GtkBox](hbox), Pointer[GtkWidget](imageWidget),
+            FALSE, FALSE, UInt32(0));
+
+        var button = gtk_button_new_with_label(cstring("Play"));
+        gtk_box_pack_end(Pointer[GtkBox](hbox), Pointer[GtkWidget](button),
+            FALSE, FALSE, UInt32(0));
+
+        gSignalConnect(button, cstring("clicked"),
+            GCallback(clickedPlay), gpointer(&mix));
+
     }
 
     gtk_widget_show_all(Pointer[GtkWidget](window));

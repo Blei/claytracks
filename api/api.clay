@@ -21,9 +21,10 @@ record Mix (
     description: String,
     id: String,
     originalCoverUrl: String,
+    sq133CoverUrl: String
 );
 overload Mix() = Mix(String(), String(), String(), Vector[String](), 0,
-    String(), String(), String());
+    String(), String(), String(), String());
 
 record Track (
     releaseName: String,
@@ -70,15 +71,29 @@ private external mixesStartHandler(data: RawPointer, _name: Pointer[XML_Char], a
         parsingCoverUrls = true;
     } else if (name == "original" and parsingCoverUrls) {
         characterDataStream = Maybe(&currentMix.originalCoverUrl);
+    } else if (name == "sq133" and parsingCoverUrls) {
+        characterDataStream = Maybe(&currentMix.sq133CoverUrl);
+    }
+}
+
+// hack for relative urls
+private fixCoverUrls(mix) {
+    static for (field in #originalCoverUrl, #sq133CoverUrl) {
+        var str = fieldRef(mix, field);
+        if (not beginsWith?(str, "http://")) {
+            fieldRef(mix, field) = "http://8tracks.com" + str;
+        }
     }
 }
 
 private external mixesEndHandler(data: RawPointer, _name: Pointer[XML_Char]) {
     var name = String(_name);
     if (name == "mix") {
+        fixCoverUrls(currentMix);
         push(mixes, currentMix);
     } else if (name == "path" or name == "slug" or name == "name"
-        or name == "description" or name == "id" or name == "original") {
+        or name == "description" or name == "id" or name == "original"
+        or name == "sq133") {
 
         characterDataStream = nothing(Pointer[String]);
     } else if (name == "plays-count") {
