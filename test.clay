@@ -8,7 +8,7 @@ import gobject.*;
 import gtk.*;
 import gdkpixbuf.*;
 
-private external watchBus(bus: Pointer[GstBus], message: Pointer[GstMessage], data: gpointer) gboolean {
+private external watchBus(bus: Pointer[GstBus], message: Pointer[GstMessage], data: gpointer) : gboolean {
 
     var msgType = message^.type;
     println(String(gst_message_type_get_name(msgType)));
@@ -48,14 +48,13 @@ private playTrack(track) {
 private var playbin = Pointer[GstElement](0);
 private var playtoken = String();
 
-main() {
+main(argc, argv) {
     var mixes = getMixes();
     
     playtoken = getPlaytoken();
     println("play token is ", playtoken);
 
     // let's get some sound going on!
-    var argc, argv = ...getArgcArgv();
     gst_init(&argc, &argv);
 
     playbin = gst_element_factory_make(cstring("playbin2"), cstring("play"));
