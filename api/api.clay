@@ -1,6 +1,6 @@
-import expat.*;
 import maybe.*;
 import http.*;
+import libxml.*;
 
 // apparently the default url doesn't give the most recent tracks when not logged
 // in?
@@ -34,48 +34,6 @@ record Track (
     url: String,
 );
 
-private var mixes = Vector[Mix]();
-private var currentMix = Mix();
-private var characterDataStream = nothing(Pointer[String]);
-private var myBuffer = String();
-private var parsingUser = false;
-private var parsingCoverUrls = false;
-
-private external characterDataHandler(data: RawPointer, s: Pointer[XML_Char], len: Int) {
-    if (just?(characterDataStream)) {
-        write(just(characterDataStream)^, Pointer[Byte](s), SizeT(len));
-    }
-}
-
-private external mixesStartHandler(data: RawPointer, _name: Pointer[XML_Char], attrs: Pointer[Pointer[XML_Char]]) {
-
-    var name = String(_name);
-    if (name == "mix") {
-        currentMix = Mix();
-    } else if (name == "path") {
-        characterDataStream = Maybe(&currentMix.path);
-    } else if (name == "slug") {
-        characterDataStream = Maybe(&currentMix.slug);
-    } else if (name == "name") {
-        characterDataStream = Maybe(&currentMix.name);
-    } else if (name == "description") {
-        characterDataStream = Maybe(&currentMix.description);
-    } else if (name == "user") {
-        parsingUser = true;
-    } else if (name == "id" and not(parsingUser)) {
-        characterDataStream = Maybe(&currentMix.id);
-    } else if (name == "plays-count") {
-        myBuffer = String();
-        characterDataStream = Maybe(&myBuffer);
-    } else if (name == "cover-urls") {
-        parsingCoverUrls = true;
-    } else if (name == "original" and parsingCoverUrls) {
-        characterDataStream = Maybe(&currentMix.originalCoverUrl);
-    } else if (name == "sq133" and parsingCoverUrls) {
-        characterDataStream = Maybe(&currentMix.sq133CoverUrl);
-    }
-}
-
 // hack for relative urls
 private fixCoverUrls(mix) {
     ..for (field in #originalCoverUrl, #sq133CoverUrl) {
@@ -86,65 +44,97 @@ private fixCoverUrls(mix) {
     }
 }
 
-private external mixesEndHandler(data: RawPointer, _name: Pointer[XML_Char]) {
-    var name = String(_name);
-    if (name == "mix") {
-        fixCoverUrls(currentMix);
-        push(mixes, currentMix);
-    } else if (name == "path" or name == "slug" or name == "name"
-        or name == "description" or name == "id" or name == "original"
-        or name == "sq133") {
+private parseUser(doc, _userNode, mix) {
+    // TODO stuff
+}
 
-        characterDataStream = nothing(Pointer[String]);
-    } else if (name == "plays-count") {
-        currentMix.playsCount = Int(just(characterDataStream)^);
-        characterDataStream = nothing(Pointer[String]);
-    } else if (name == "user") {
-        parsingUser = false;
-    } else if (name == "cover-urls") {
-        parsingCoverUrls = false;
+private parseCoverUrls(doc, _mixNode, mix) {
+    var cur = _mixNode^.children;
+    while (not null?(cur)) {
+        var name = CStringRef(cur^.name);
+        if (name == "original") {
+            mix.originalCoverUrl = nodeListGetString(doc, cur^.children);
+        } else if (name == "sq133") {
+            mix.sq133CoverUrl = nodeListGetString(doc, cur^.children);
+        }
+        cur = cur^.next;
     }
 }
 
-private setupMixesParser() {
-    mixes = Vector[Mix]();
-    parsingUser = false;
+private parseMix(doc, cur, mixes) {
+    if (xmlStrcmp(cur^.name, xmlString("mix")) != 0) {
+        printlnTo(stderr, "Mix is not a mix, it's a ", CStringRef(cur^.name));
+        return;
+    }
 
-    var parser = XML_ParserCreate(null(XML_Char));
-    XML_SetElementHandler(parser, mixesStartHandler, mixesEndHandler);
-    XML_SetCharacterDataHandler(parser, characterDataHandler);
-    return parser;
-}
-
-parseMixes(stream) {
-    var parser = setupMixesParser();
-    while (true) {
-        alias bufsize = SizeT(4096);
-        var buf = XML_GetBuffer(parser, Int32(bufsize));
-        if (buf == Type(buf)(0)) {
-            error("could not get buffer from parser");
+    var mix = Mix();
+    var mixNode = cur^.children;
+    while (not null?(mixNode)) {
+        var name = CStringRef(mixNode^.name);
+        if (name == "path") {
+            mix.path = nodeListGetString(doc, mixNode^.children);
+        } else if (name == "slug") {
+            mix.slug = nodeListGetString(doc, mixNode^.children);
+        } else if (name == "name") {
+            mix.name = nodeListGetString(doc, mixNode^.children);
+        } else if (name == "description") {
+            mix.description = nodeListGetString(doc, mixNode^.children);
+        } else if (name == "id") {
+            mix.id = nodeListGetString(doc, mixNode^.children);
+        } else if (name == "plays-count") {
+            mix.playsCount = Int(nodeListGetString(doc, mixNode^.children));
+        } else if (name == "cover-urls") {
+            parseCoverUrls(doc, mixNode, mix);
+        } else if (name == "user") {
+            parseUser(doc, mixNode, mix);
         }
 
-        var bytesRead = Int32(read(stream, Pointer[Byte](buf), bufsize));
-        var last = bytesRead == 0;
+        mixNode = mixNode^.next;
+    }
 
-        var success = XML_ParseBuffer(parser, bytesRead, if (last) 1 else 0) != 0;
-        println("parsing was ", if (success) "" else "not ", "successful");
-        if (last) {
+    fixCoverUrls(mix);
+    push(mixes, mix);
+}
+
+private parseMixes(string) {
+    var doc = xmlParseDoc(xmlString(string));
+    if (null?(doc)) {
+        error("parsing of mixes xml document failed");
+    }
+
+    var cur = xmlDocGetRootElement(doc);
+    if (null?(doc)) {
+        error("Empty mixes document");
+    }
+
+    if (xmlStrcmp(cur^.name, xmlString("response")) != 0) {
+        xmlFreeDoc(doc);
+        error("Incorrect mixes document");
+    }
+
+    cur = cur^.children;
+    while (not null?(cur)) {
+        if (xmlStrcmp(cur^.name, xmlString("mixes")) == 0) {
+            cur = cur^.children;
             break;
         }
+        cur = cur^.next;
     }
 
-    XML_ParserFree(parser);
+    if (null?(cur)) {
+        xmlFreeDoc(doc);
+        error("document contains no mixes");
+    }
 
-    return move(mixes);
-}
+    var mixes = Vector[Mix]();
 
-overload parseMixes(string) {
-    var parser = setupMixesParser();
-    var success = XML_Parse(parser, cstring(string), Int32(size(string)), 1) != 0;
-    println("parsing was ", if (success) "" else "not ", "successful");
-    XML_ParserFree(parser);
+    while (not null?(cur)) {
+        parseMix(doc, cur, mixes);
+        cur = cur^.next;
+    }
+
+    xmlFreeDoc(doc);
+    printlnTo(stderr, "parsing mixes has finished. there are ", size(mixes), " mixes");
     return move(mixes);
 }
 
@@ -152,36 +142,38 @@ getMixes() {
     var req = GetRequest();
     var sock = sendRequest(req, mixesUrl);
     var resp = parseResponse(sock, req);
+    println(resp.body);
     return move(parseMixes(resp.body));
 }
 
-private external playtokenStartHandler(data: RawPointer, _name: Pointer[XML_Char], attrs: Pointer[Pointer[XML_Char]]) {
-    
-    var name = String(_name);
-    if (name == "play-token") {
-        characterDataStream = Maybe(Pointer[String](data));
+private parsePlaytoken(string) {
+    var doc = xmlParseDoc(xmlString(string));
+    if (null?(doc)) {
+        error("Parsing the playtoken document failed");
     }
-}
 
-private external playtokenEndHandler(data: RawPointer, _name: Pointer[XML_Char]) {
-    var name = String(_name);
-    if (name == "play-token") {
-        characterDataStream = nothing(Pointer[String]);
+    var cur = xmlDocGetRootElement(doc);
+    if (null?(cur)) {
+        error("Empty playtoken document");
     }
-}
 
-parsePlaytoken(string) {
+    if (xmlStrcmp(cur^.name, xmlString("response")) != 0) {
+        error("Incorrect playtoken xml document");
+    }
+
+    cur = cur^.children;
+
     var playtoken = String();
-
-    var parser = XML_ParserCreate(null(XML_Char));
-    XML_SetElementHandler(parser, playtokenStartHandler, playtokenEndHandler);
-    XML_SetCharacterDataHandler(parser, characterDataHandler);
-    XML_SetUserData(parser, RawPointer(&playtoken));
-
-    var success = XML_Parse(parser, cstring(string), Int32(size(string)), 1) != 0;
-    println("parsing was ", if (success) "" else "not ", "successful");
-    XML_ParserFree(parser);
     
+    while (not null?(cur)) {
+        if (xmlStrcmp(cur^.name, xmlString("play-token")) == 0) {
+            playtoken = nodeListGetString(doc, cur^.children);
+            break;
+        }
+
+        cur = cur^.next;
+    }
+
     return move(playtoken);
 }
 
@@ -192,51 +184,68 @@ getPlaytoken() {
     return move(parsePlaytoken(resp.body));
 }
 
-private external trackStartHandler(data: RawPointer, _name: Pointer[XML_Char], attrs: Pointer[Pointer[XML_Char]]) {
-
-    var name = String(_name);
-    var track = Pointer[Track](data);
-    if (name == "release-name") {
-        characterDataStream = Maybe(&track^.releaseName);
-    } else if (name == "name") {
-        characterDataStream = Maybe(&track^.name);
-    } else if (name == "performer") {
-        characterDataStream = Maybe(&track^.performer);
-    } else if (name == "id") {
-        characterDataStream = Maybe(&track^.id);
-    } else if (name == "url") {
-        characterDataStream = Maybe(&track^.url);
+private parseTrack(string) {
+    var doc = xmlParseDoc(xmlString(string));
+    if (null?(doc)) {
+        error("Track document parsing failed");
     }
-}
 
-private external trackEndHandler(data: RawPointer, _name: Pointer[XML_Char]) {
-    var name = String(_name);
-    if (name == "release-name" or name == "performer" or name == "id"
-        or name == "url") {
-
-        characterDataStream = nothing(Pointer[String]);
+    var cur = xmlDocGetRootElement(doc);
+    if (null?(cur)) {
+        error("Track document is empty");
     }
-}
 
-parseTrack(string) {
+    if (xmlStrcmp(cur^.name, xmlString("response")) != 0) {
+        error("Track document contains unknown data");
+    }
+
+    cur = cur^.children;
+
+    while (not null?(cur)) {
+        if (xmlStrcmp(cur^.name, xmlString("set")) == 0) {
+            cur = cur^.children;
+            break;
+        }
+        cur = cur^.next;
+    }
+
+    while (not null?(cur)) {
+        if (xmlStrcmp(cur^.name, xmlString("track")) == 0) {
+            cur = cur^.children;
+            break;
+        }
+        cur = cur^.next;
+    }
+
+    if (null?(cur)) {
+        error("Track contains no set (or the set is empty)");
+    }
+
     var track = Track();
 
-    var parser = XML_ParserCreate(null(XML_Char));
-    XML_SetElementHandler(parser, trackStartHandler, trackEndHandler);
-    XML_SetCharacterDataHandler(parser, characterDataHandler);
-    XML_SetUserData(parser, RawPointer(&track));
+    while (not null?(cur)) {
+        var name = String(cur^.name);
+        if (name == "release-name") {
+            track.releaseName = nodeListGetString(doc, cur^.children);
+        } else if (name == "name") {
+            track.name = nodeListGetString(doc, cur^.children);
+        } else if (name == "performer") {
+            track.performer = nodeListGetString(doc, cur^.children);
+        } else if (name == "id") {
+            track.id = nodeListGetString(doc, cur^.children);
+        } else if (name == "url") {
+            track.url = nodeListGetString(doc, cur^.children);
+        }
+        cur = cur^.next;
+    }
 
-    var success = XML_Parse(parser, cstring(string), Int32(size(string)), 1) != 0;
-    println("parsing was ", if (success) "" else "not ", "successful");
-    XML_ParserFree(parser);
-    
     return move(track);
 }
 
 getTrack(playtoken, mix) {
     var req = GetRequest();
     var url = playUrl(playtoken, mix.id);
-    //println(url.path);
+    printlnTo(stderr, url.path);
     var sock = sendRequest(req, url);
     var resp = parseResponse(sock, req);
     return move(parseTrack(resp.body));
