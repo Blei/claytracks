@@ -78,7 +78,7 @@ private external mixesStartHandler(data: RawPointer, _name: Pointer[XML_Char], a
 
 // hack for relative urls
 private fixCoverUrls(mix) {
-    static for (field in #originalCoverUrl, #sq133CoverUrl) {
+    ..for (field in #originalCoverUrl, #sq133CoverUrl) {
         var str = fieldRef(mix, field);
         if (not beginsWith?(str, "http://")) {
             fieldRef(mix, field) = "http://8tracks.com" + str;
