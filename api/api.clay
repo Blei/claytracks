@@ -4,10 +4,10 @@ import libxml.*;
 
 // apparently the default url doesn't give the most recent tracks when not logged
 // in?
-var mixesUrl = just(parseUrl("http://8tracks.com/mixes.xml?sort=recent"));
-var playtokenUrl = just(parseUrl("http://8tracks.com/sets/new.xml"));
+private var mixesUrl = just(parseUrl("http://8tracks.com/mixes.xml?sort=recent"));
+private var playtokenUrl = just(parseUrl("http://8tracks.com/sets/new.xml"));
 
-playUrl(playtoken, mixId) {
+private playUrl(playtoken, mixId) {
     return just(parseUrl("http://8tracks.com/sets/" + playtoken
         + "/play.xml?mix_id=" + mixId));
 }
@@ -48,48 +48,43 @@ private parseUser(doc, _userNode, mix) {
     // TODO stuff
 }
 
-private parseCoverUrls(doc, _mixNode, mix) {
-    var cur = _mixNode^.children;
-    while (not null?(cur)) {
-        var name = CStringRef(cur^.name);
+private parseCoverUrls(doc, coverUrlsNode, mix) {
+    for (node in XmlNodePtrSequence(coverUrlsNode^.children)) {
+        var name = CStringRef(node^.name);
         if (name == "original") {
-            mix.originalCoverUrl = nodeListGetString(doc, cur^.children);
+            mix.originalCoverUrl = nodeListGetString(doc, node^.children);
         } else if (name == "sq133") {
-            mix.sq133CoverUrl = nodeListGetString(doc, cur^.children);
+            mix.sq133CoverUrl = nodeListGetString(doc, node^.children);
         }
-        cur = cur^.next;
     }
 }
 
-private parseMix(doc, cur, mixes) {
-    if (xmlStrcmp(cur^.name, xmlString("mix")) != 0) {
-        printlnTo(stderr, "Mix is not a mix, it's a ", CStringRef(cur^.name));
+private parseMix(doc, mixNode, mixes) {
+    if (xmlStrcmp(mixNode^.name, xmlString("mix")) != 0) {
+        printlnTo(stderr, "Mix is not a mix, it's a ", CStringRef(mixNode^.name));
         return;
     }
 
     var mix = Mix();
-    var mixNode = cur^.children;
-    while (not null?(mixNode)) {
-        var name = CStringRef(mixNode^.name);
+    for (node in XmlNodePtrSequence(mixNode^.children)) {
+        var name = CStringRef(node^.name);
         if (name == "path") {
-            mix.path = nodeListGetString(doc, mixNode^.children);
+            mix.path = nodeListGetString(doc, node^.children);
         } else if (name == "slug") {
-            mix.slug = nodeListGetString(doc, mixNode^.children);
+            mix.slug = nodeListGetString(doc, node^.children);
         } else if (name == "name") {
-            mix.name = nodeListGetString(doc, mixNode^.children);
+            mix.name = nodeListGetString(doc, node^.children);
         } else if (name == "description") {
-            mix.description = nodeListGetString(doc, mixNode^.children);
+            mix.description = nodeListGetString(doc, node^.children);
         } else if (name == "id") {
-            mix.id = nodeListGetString(doc, mixNode^.children);
+            mix.id = nodeListGetString(doc, node^.children);
         } else if (name == "plays-count") {
-            mix.playsCount = Int(nodeListGetString(doc, mixNode^.children));
+            mix.playsCount = Int(nodeListGetString(doc, node^.children));
         } else if (name == "cover-urls") {
-            parseCoverUrls(doc, mixNode, mix);
+            parseCoverUrls(doc, node, mix);
         } else if (name == "user") {
-            parseUser(doc, mixNode, mix);
+            parseUser(doc, node, mix);
         }
-
-        mixNode = mixNode^.next;
     }
 
     fixCoverUrls(mix);
@@ -112,25 +107,23 @@ private parseMixes(string) {
         error("Incorrect mixes document");
     }
 
-    cur = cur^.children;
-    while (not null?(cur)) {
-        if (xmlStrcmp(cur^.name, xmlString("mixes")) == 0) {
-            cur = cur^.children;
+    var mixesNode = null(xmlNode);
+    for (node in XmlNodePtrSequence(cur^.children)) {
+        if (xmlStrcmp(node^.name, xmlString("mixes")) == 0) {
+            mixesNode = node;
             break;
         }
-        cur = cur^.next;
     }
 
-    if (null?(cur)) {
+    if (null?(mixesNode)) {
         xmlFreeDoc(doc);
-        error("document contains no mixes");
+        error("document contains no mixes node");
     }
 
     var mixes = Vector[Mix]();
 
-    while (not null?(cur)) {
-        parseMix(doc, cur, mixes);
-        cur = cur^.next;
+    for (node in XmlNodePtrSequence(mixesNode^.children)) {
+        parseMix(doc, node, mixes);
     }
 
     xmlFreeDoc(doc);
@@ -144,6 +137,14 @@ getMixes() {
     var resp = parseResponse(sock, req);
     println(resp.body);
     return move(parseMixes(resp.body));
+}
+
+private maybeFindIf(seq, pred) {
+    for (el in seq) {
+        if (pred(el))
+            return Maybe(el);
+    }
+    return nothing(SequenceElementType(Type(seq)));
 }
 
 private parsePlaytoken(string) {
@@ -161,20 +162,12 @@ private parsePlaytoken(string) {
         error("Incorrect playtoken xml document");
     }
 
-    cur = cur^.children;
+    var maybePlaytokenNode = maybeFindIf(XmlNodePtrSequence(cur^.children)): node ->
+        xmlStrcmp(node^.name, xmlString("play-token")) == 0;
 
-    var playtoken = String();
-    
-    while (not null?(cur)) {
-        if (xmlStrcmp(cur^.name, xmlString("play-token")) == 0) {
-            playtoken = nodeListGetString(doc, cur^.children);
-            break;
-        }
-
-        cur = cur^.next;
-    }
-
-    return move(playtoken);
+    return maybe(maybePlaytokenNode)
+        : node -> nodeListGetString(doc, node^.children)
+        :: () -> String();
 }
 
 getPlaytoken() {
@@ -199,44 +192,41 @@ private parseTrack(string) {
         error("Track document contains unknown data");
     }
 
-    cur = cur^.children;
-
-    while (not null?(cur)) {
-        if (xmlStrcmp(cur^.name, xmlString("set")) == 0) {
-            cur = cur^.children;
+    var setNode = null(xmlNode);
+    for (node in XmlNodePtrSequence(cur^.children)) {
+        if (xmlStrcmp(node^.name, xmlString("set")) == 0) {
+            setNode = node;
             break;
         }
-        cur = cur^.next;
     }
 
-    while (not null?(cur)) {
-        if (xmlStrcmp(cur^.name, xmlString("track")) == 0) {
-            cur = cur^.children;
+    var trackNode = null(xmlNode);
+    for (node in XmlNodePtrSequence(setNode^.children)) {
+        if (xmlStrcmp(node^.name, xmlString("track")) == 0) {
+            trackNode = node;
             break;
         }
-        cur = cur^.next;
     }
 
-    if (null?(cur)) {
+    if (null?(trackNode)) {
         error("Track contains no set (or the set is empty)");
     }
 
     var track = Track();
 
-    while (not null?(cur)) {
-        var name = String(cur^.name);
+    for (node in XmlNodePtrSequence(trackNode^.children)) {
+        var name = String(node^.name);
         if (name == "release-name") {
-            track.releaseName = nodeListGetString(doc, cur^.children);
+            track.releaseName = nodeListGetString(doc, node^.children);
         } else if (name == "name") {
-            track.name = nodeListGetString(doc, cur^.children);
+            track.name = nodeListGetString(doc, node^.children);
         } else if (name == "performer") {
-            track.performer = nodeListGetString(doc, cur^.children);
+            track.performer = nodeListGetString(doc, node^.children);
         } else if (name == "id") {
-            track.id = nodeListGetString(doc, cur^.children);
+            track.id = nodeListGetString(doc, node^.children);
         } else if (name == "url") {
-            track.url = nodeListGetString(doc, cur^.children);
+            track.url = nodeListGetString(doc, node^.children);
         }
-        cur = cur^.next;
     }
 
     return move(track);
