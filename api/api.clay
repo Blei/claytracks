@@ -205,6 +205,10 @@ private parseTrack(string) {
         }
     }
 
+    if (null?(setNode)) {
+        return nothing(Track);
+    }
+
     var trackNode = null(xmlNode);
     for (node in XmlNodePtrSequence(setNode^.children)) {
         if (xmlStrcmp(node^.name, xmlString("track")) == 0) {
@@ -214,7 +218,7 @@ private parseTrack(string) {
     }
 
     if (null?(trackNode)) {
-        error("Track contains no set (or the set is empty)");
+        return nothing(Track);
     }
 
     var track = Track();
@@ -234,7 +238,7 @@ private parseTrack(string) {
         }
     }
 
-    return move(track);
+    return move(Maybe(track));
 }
 
 getTrack(playtoken, mix) {
