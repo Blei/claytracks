@@ -12,6 +12,11 @@ private playUrl(playtoken, mixId) {
         + "/play.xml?mix_id=" + mixId));
 }
 
+private nextUrl(playtoken, mixId) {
+    return just(parseUrl("http://8tracks.com/sets/" + playtoken
+        + "/next.xml?mix_id=" + mixId));
+}
+
 record Mix (
     path: String,
     slug: String,
@@ -235,6 +240,15 @@ private parseTrack(string) {
 getTrack(playtoken, mix) {
     var req = GetRequest();
     var url = playUrl(playtoken, mix.id);
+    printlnTo(stderr, url.path);
+    var sock = sendRequest(req, url);
+    var resp = parseResponse(sock, req);
+    return move(parseTrack(resp.body));
+}
+
+getNextTrack(playtoken, mix) {
+    var req = GetRequest();
+    var url = nextUrl(playtoken, mix.id);
     printlnTo(stderr, url.path);
     var sock = sendRequest(req, url);
     var resp = parseResponse(sock, req);

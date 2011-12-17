@@ -8,12 +8,18 @@ import gobject.*;
 import gtk.*;
 import gdkpixbuf.*;
 
+private var playbin = Pointer[GstElement](0);
+private var playtoken = String();
+
+private var currentTrack = nothing(Track);
+private var currentMix = nothing(Mix);
+
 private external watchBus(bus: Pointer[GstBus], message: Pointer[GstMessage], data: gpointer) : gboolean {
 
     var msgType = message^.type;
-    println(String(gst_message_type_get_name(msgType)));
 
-    if (msgType == GST_MESSAGE_ERROR) {
+    switch (msgType)
+    case (GST_MESSAGE_ERROR) {
         var err = null(GError);
         var debugInfo = null(gchar);
         gst_message_parse_error(message, &err, &debugInfo);
@@ -23,6 +29,16 @@ private external watchBus(bus: Pointer[GstBus], message: Pointer[GstMessage], da
         g_free(gpointer(debugInfo));
 
         //gst_element_set_state(playbin, GST_STATE_NULL);
+    }
+    case (GST_MESSAGE_EOS) {
+        var mix = require(currentMix);
+        var track = getNextTrack(playtoken, mix);
+        println("Next track: ", track);
+        currentTrack = Maybe(track);
+        playTrack();
+    }
+    else {
+        //println(String(gst_message_type_get_name(msgType)));
     }
 
     return TRUE;
@@ -34,19 +50,19 @@ private external destroying(widget: Pointer[GtkWidget], data: gpointer) {
 
 private external clickedPlay(button: Pointer[GtkButton], data: gpointer) {
     var mix = Pointer[Mix](data);
+    currentMix = Maybe(mix^);
     var track = getTrack(playtoken, mix^);
     println(track);
-    playTrack(track);
+    currentTrack = Maybe(track);
+    playTrack();
 }
 
-private playTrack(track) {
+private playTrack() {
+    var track = require(currentTrack);
     gst_element_set_state(playbin, GST_STATE_NULL);
     g_object_set(gpointer(playbin), cstring("uri"), cstring(track.url), 0);
     gst_element_set_state(playbin, GST_STATE_PLAYING);
 }
-
-private var playbin = Pointer[GstElement](0);
-private var playtoken = String();
 
 main(argc, argv) {
     var mixes = getMixes();
