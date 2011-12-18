@@ -18,7 +18,9 @@ private var currentTrackLabel = null(GtkLabel);
 private var nothingPlayingText = cstring("Nothing playing currently");
 private var currentlyPlaying? = false;
 
+private var currentClockId = nothing(GstClockID);
 private var songReporterRegistered? = false;
+private var songReported? = false;
 
 private external watchBus(bus: Pointer[GstBus], message: Pointer[GstMessage], data: gpointer) : gboolean {
 
@@ -31,11 +33,10 @@ private external watchBus(bus: Pointer[GstBus], message: Pointer[GstMessage], da
         var pendingState = GstState(0);
         gst_message_parse_state_changed(message, &oldState, &newState, &pendingState);
 
-        var newStateName = gst_element_state_get_name(newState);
-        println("Changed state to ", CStringRef(newStateName));
+        //var newStateName = gst_element_state_get_name(newState);
+        //println("Changed state to ", CStringRef(newStateName));
 
-        if ((newState == GST_STATE_PLAYING /* or newState == GST_STATE_PAUSED*/)
-                and not songReporterRegistered?) {
+        if (newState == GST_STATE_PLAYING and not songReporterRegistered?) {
             registerSongReporter();
         }
     }
@@ -87,8 +88,10 @@ private external registerPlayingSong(clock: Pointer[GstClock], time: GstClockTim
 
     println("Reporting track");
     reportTrack(require(currentMix), require(currentTrack));
+    songReported? = true;
 
     gst_clock_id_unref(id);
+    currentClockId = nothing(GstClockID);
 
     // return value ignored, according to docs
     return TRUE;
@@ -102,16 +105,25 @@ private registerSongReporter() {
     }
     println("Registering Song Reporter");
     var baseTime = gst_element_get_base_time(playbin);
-    var clockId = gst_clock_new_single_shot_id(clock, baseTime + GST_SECOND * 10);
+    var clockId = gst_clock_new_single_shot_id(clock, baseTime + GST_SECOND * 30);
     gst_clock_id_wait_async(clockId, GstClockCallback(registerPlayingSong), gpointer(0));
+
+    currentClockId = Maybe(clockId);
 
     g_object_unref(gpointer(clock));
 
     songReporterRegistered? = true;
+    songReported? = false;
 }
 
 private playTrack() {
     maybe(currentTrack) : track -> {
+        // Stop left-over song reporter
+        if (songReporterRegistered? and not songReported?) {
+            gst_clock_id_unschedule(require(currentClockId));
+            currentClockId = nothing(GstClockID);
+        }
+
         println("Current track: ", track);
         gtk_label_set_text(currentTrackLabel,
             cstring("'" + track.name + "' by " + track.performer));
@@ -121,6 +133,7 @@ private playTrack() {
         gst_element_set_state(playbin, GST_STATE_PLAYING);
         currentlyPlaying? = true;
         songReporterRegistered? = false;
+        songReported? = false;
     } :: () -> {
         println("No current track (end of playlist?)");
         gtk_label_set_text(currentTrackLabel, nothingPlayingText);
@@ -131,6 +144,42 @@ private playTrack() {
 private togglePlaying() {
     gst_element_set_state(playbin, if (currentlyPlaying?) GST_STATE_PAUSED else GST_STATE_PLAYING);
     currentlyPlaying? = not currentlyPlaying?;
+}
+
+private addMixToContainer(mix, container) {
+    //println("cover url is ", mix.sq133CoverUrl);
+    var url = require(parseUrl(mix.sq133CoverUrl));
+    var req = GetRequest();
+    var sock = sendRequest(req, url);
+    var resp = parseResponse(sock, req);
+
+    var memoryStream = g_memory_input_stream_new_from_data(
+        gpointer(cstring(resp.body)),
+        Int64(size(resp.body)), GDestroyNotify(0));
+
+    var error = Pointer[GError](0);
+    var image = gdk_pixbuf_new_from_stream(memoryStream, null(GCancellable), &error);
+    if (not null?(error)) {
+        println("error creating pixbuf ", String(error^.message));
+        return;
+    }
+
+    var hbox = gtk_hbox_new(FALSE, 5);
+    gtk_container_add(Pointer[GtkContainer](container), Pointer[GtkWidget](hbox));
+    var label = gtk_label_new(cstring(mix.name));
+    gtk_box_pack_start(Pointer[GtkBox](hbox), Pointer[GtkWidget](label),
+        TRUE, FALSE, UInt32(0));
+
+    var imageWidget = gtk_image_new_from_pixbuf(image);
+    gtk_box_pack_end(Pointer[GtkBox](hbox), Pointer[GtkWidget](imageWidget),
+        FALSE, FALSE, UInt32(0));
+
+    var button = gtk_button_new_with_label(cstring("Play"));
+    gtk_box_pack_end(Pointer[GtkBox](hbox), Pointer[GtkWidget](button),
+        FALSE, FALSE, UInt32(0));
+
+    gSignalConnect(button, cstring("clicked"),
+        GCallback(clickedPlay), gpointer(&mix));
 }
 
 main(argc, argv) {
@@ -189,41 +238,7 @@ main(argc, argv) {
         Pointer[GtkScrolledWindow](scrolledWindow), Pointer[GtkWidget](vbox));
 
     for (mix in mixes) {
-        var hbox = gtk_hbox_new(FALSE, 5);
-        gtk_container_add(Pointer[GtkContainer](vbox), Pointer[GtkWidget](hbox));
-        var label = gtk_label_new(cstring(mix.name));
-        gtk_box_pack_start(Pointer[GtkBox](hbox), Pointer[GtkWidget](label),
-            TRUE, FALSE, UInt32(0));
-
-        println("cover url is ", mix.sq133CoverUrl);
-        var url = just(parseUrl(mix.sq133CoverUrl));
-        var req = GetRequest();
-        var sock = sendRequest(req, url);
-        var resp = parseResponse(sock, req);
-
-        var memoryStream = g_memory_input_stream_new_from_data(
-            gpointer(cstring(resp.body)),
-            Int64(size(resp.body)), GDestroyNotify(0));
-
-        var error = Pointer[GError](0);
-        var image = gdk_pixbuf_new_from_stream(memoryStream,
-            null(GCancellable), &error);
-        if (not null?(error)) {
-            println("error was ", String(error^.message));
-            continue;
-        }
-
-        var imageWidget = gtk_image_new_from_pixbuf(image);
-        gtk_box_pack_end(Pointer[GtkBox](hbox), Pointer[GtkWidget](imageWidget),
-            FALSE, FALSE, UInt32(0));
-
-        var button = gtk_button_new_with_label(cstring("Play"));
-        gtk_box_pack_end(Pointer[GtkBox](hbox), Pointer[GtkWidget](button),
-            FALSE, FALSE, UInt32(0));
-
-        gSignalConnect(button, cstring("clicked"),
-            GCallback(clickedPlay), gpointer(&mix));
-
+        addMixToContainer(mix, vbox);
     }
 
     gtk_widget_show_all(Pointer[GtkWidget](window));

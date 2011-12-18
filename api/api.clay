@@ -70,11 +70,6 @@ private parseCoverUrls(doc, coverUrlsNode, mix) {
 }
 
 private parseMix(doc, mixNode, mixes) {
-    if (xmlStrcmp(mixNode^.name, xmlString("mix")) != 0) {
-        printlnTo(stderr, "Mix is not a mix, it's a ", CStringRef(mixNode^.name));
-        return;
-    }
-
     var mix = Mix();
     for (node in XmlNodePtrSequence(mixNode^.children)) {
         var name = CStringRef(node^.name);
@@ -133,7 +128,9 @@ private parseMixes(string) {
     var mixes = Vector[Mix]();
 
     for (node in XmlNodePtrSequence(mixesNode^.children)) {
-        parseMix(doc, node, mixes);
+        if (xmlStrcmp(node^.name, xmlString("mix")) == 0) {
+            parseMix(doc, node, mixes);
+        }
     }
 
     xmlFreeDoc(doc);
@@ -145,7 +142,7 @@ getMixes() {
     var req = GetRequest();
     var sock = sendRequest(req, mixesUrl);
     var resp = parseResponse(sock, req);
-    println(resp.body);
+    //println(resp.body);
     return move(parseMixes(resp.body));
 }
 
