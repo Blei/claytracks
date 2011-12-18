@@ -22,6 +22,9 @@ private var currentClockId = nothing(GstClockID);
 private var songReporterRegistered? = false;
 private var songReported? = false;
 
+private var playStopButton = null(GtkButton);
+private var skipButton = null(GtkButton);
+
 private external watchBus(bus: Pointer[GstBus], message: Pointer[GstMessage], data: gpointer) : gboolean {
 
     var msgType = message^.type;
@@ -134,10 +137,12 @@ private playTrack() {
         currentlyPlaying? = true;
         songReporterRegistered? = false;
         songReported? = false;
+        setControlButtonsSensitive(true);
     } :: () -> {
         println("No current track (end of playlist?)");
         gtk_label_set_text(currentTrackLabel, nothingPlayingText);
         currentlyPlaying? = false;
+        setControlButtonsSensitive(false);
     }
 }
 
@@ -166,9 +171,10 @@ private addMixToContainer(mix, container) {
 
     var hbox = gtk_hbox_new(FALSE, 5);
     gtk_container_add(Pointer[GtkContainer](container), Pointer[GtkWidget](hbox));
+
     var label = gtk_label_new(cstring(mix.name));
     gtk_box_pack_start(Pointer[GtkBox](hbox), Pointer[GtkWidget](label),
-        TRUE, FALSE, UInt32(0));
+        TRUE, TRUE, UInt32(0));
 
     var imageWidget = gtk_image_new_from_pixbuf(image);
     gtk_box_pack_end(Pointer[GtkBox](hbox), Pointer[GtkWidget](imageWidget),
@@ -180,6 +186,12 @@ private addMixToContainer(mix, container) {
 
     gSignalConnect(button, cstring("clicked"),
         GCallback(clickedPlay), gpointer(&mix));
+}
+
+private setControlButtonsSensitive(sensitive?) {
+    ..for (button in playStopButton, skipButton) {
+        gtk_widget_set_sensitive(Pointer[GtkWidget](button), if (sensitive?) TRUE else FALSE);
+    }
 }
 
 main(argc, argv) {
@@ -209,19 +221,22 @@ main(argc, argv) {
     var windowBox = gtk_vbox_new(FALSE, 5);
     gtk_container_add(Pointer[GtkContainer](window), Pointer[GtkWidget](windowBox));
 
-    var controlButtonBox = gtk_hbox_new(FALSE, 5);
+    var controlButtonBox = gtk_hbutton_box_new();
     gtk_box_pack_start(Pointer[GtkBox](windowBox), Pointer[GtkWidget](controlButtonBox),
         FALSE, FALSE, 0u);
+    gtk_button_box_set_layout(Pointer[GtkButtonBox](controlButtonBox), GTK_BUTTONBOX_CENTER);
 
-    var playStopButton = gtk_button_new_with_label(cstring("Play/Pause"));
+    playStopButton = Pointer[GtkButton](gtk_button_new_with_label(cstring("Play/Pause")));
     gtk_container_add(Pointer[GtkContainer](controlButtonBox), Pointer[GtkWidget](playStopButton));
     gSignalConnect(playStopButton, cstring("clicked"),
         GCallback(clickedPlayPause), gpointer(0));
 
-    var skipButton = gtk_button_new_with_label(cstring("Skip"));
+    skipButton = Pointer[GtkButton](gtk_button_new_with_label(cstring("Skip")));
     gtk_container_add(Pointer[GtkContainer](controlButtonBox), Pointer[GtkWidget](skipButton));
     gSignalConnect(skipButton, cstring("clicked"),
         GCallback(clickedSkip), gpointer(0));
+
+    setControlButtonsSensitive(false);
 
     // whu? that's definitely a label
     currentTrackLabel = Pointer[GtkLabel](gtk_label_new(nothingPlayingText));
