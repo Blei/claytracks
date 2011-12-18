@@ -18,11 +18,27 @@ private var currentTrackLabel = null(GtkLabel);
 private var nothingPlayingText = cstring("Nothing playing currently");
 private var currentlyPlaying? = false;
 
+private var songReporterRegistered? = false;
+
 private external watchBus(bus: Pointer[GstBus], message: Pointer[GstMessage], data: gpointer) : gboolean {
 
     var msgType = message^.type;
 
     switch (msgType)
+    case (GST_MESSAGE_STATE_CHANGED) {
+        var oldState = GstState(0);
+        var newState = GstState(0);
+        var pendingState = GstState(0);
+        gst_message_parse_state_changed(message, &oldState, &newState, &pendingState);
+
+        var newStateName = gst_element_state_get_name(newState);
+        println("Changed state to ", CStringRef(newStateName));
+
+        if ((newState == GST_STATE_PLAYING /* or newState == GST_STATE_PAUSED*/)
+                and not songReporterRegistered?) {
+            registerSongReporter();
+        }
+    }
     case (GST_MESSAGE_ERROR) {
         var err = null(GError);
         var debugInfo = null(gchar);
@@ -66,6 +82,34 @@ private external clickedSkip(button: Pointer[GtkButton], data: gpointer) {
     printlnTo(stderr, "Skip not implemented yet");
 }
 
+private external registerPlayingSong(clock: Pointer[GstClock], time: GstClockTime,
+        id: GstClockID, data: gpointer) : gboolean {
+
+    println("Reporting track");
+    reportTrack(require(currentMix), require(currentTrack));
+
+    gst_clock_id_unref(id);
+
+    // return value ignored, according to docs
+    return TRUE;
+}
+
+private registerSongReporter() {
+    var clock = gst_element_get_clock(playbin);
+    if (null?(clock)) {
+        printlnTo(stderr, "clock is null");
+        return;
+    }
+    println("Registering Song Reporter");
+    var baseTime = gst_element_get_base_time(playbin);
+    var clockId = gst_clock_new_single_shot_id(clock, baseTime + GST_SECOND * 10);
+    gst_clock_id_wait_async(clockId, GstClockCallback(registerPlayingSong), gpointer(0));
+
+    g_object_unref(gpointer(clock));
+
+    songReporterRegistered? = true;
+}
+
 private playTrack() {
     maybe(currentTrack) : track -> {
         println("Current track: ", track);
@@ -76,6 +120,7 @@ private playTrack() {
         g_object_set(gpointer(playbin), cstring("uri"), cstring(track.url), 0);
         gst_element_set_state(playbin, GST_STATE_PLAYING);
         currentlyPlaying? = true;
+        songReporterRegistered? = false;
     } :: () -> {
         println("No current track (end of playlist?)");
         gtk_label_set_text(currentTrackLabel, nothingPlayingText);
@@ -99,7 +144,7 @@ main(argc, argv) {
 
     playbin = gst_element_factory_make(cstring("playbin2"), cstring("play"));
 
-    var bus = gst_pipeline_get_bus(Pointer[GstPipeline](playbin));
+    var bus = gst_element_get_bus(playbin);
     gst_bus_add_watch(bus, GstBusFunc(watchBus), gpointer(0));
     gst_object_unref(gpointer(bus));
     
