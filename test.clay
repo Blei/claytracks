@@ -83,7 +83,17 @@ private external clickedPlayPause(button: Pointer[GtkButton], data: gpointer) {
 }
 
 private external clickedSkip(button: Pointer[GtkButton], data: gpointer) {
-    printlnTo(stderr, "Skip not implemented yet");
+    if (currentlyPlaying?) {
+        // Pause current track
+        gst_element_set_state(playbin, GST_STATE_PAUSED);
+        currentlyPlaying? = false;
+    }
+
+    var mix = require(currentMix);
+    // TODO is skipping allowed?
+    currentTrack = skipTrack(playtoken, mix);
+    // TODO show indication if skipping fails
+    playTrack();
 }
 
 private external registerPlayingSong(clock: Pointer[GstClock], time: GstClockTime,

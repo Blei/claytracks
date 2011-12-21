@@ -17,6 +17,11 @@ private nextUrl(playtoken, mixId) {
         + "/next.xml?mix_id=" + mixId));
 }
 
+private skipUrl(playtoken, mixId) {
+    return require(parseUrl("http://8tracks.com/sets/" + playtoken
+        + "/skip.xml?mix_id=" + mixId));
+}
+
 private reportingUrl(mixId, trackId) {
     return require(parseUrl("http://8tracks.com/sets/874076615/report.xml?track_id="
         + trackId + "&mix_id=" + mixId));
@@ -268,4 +273,14 @@ reportTrack(mix, track) {
     var sock = sendRequest(req, url);
     var resp = parseResponse(sock, req);
     // TODO check response
+}
+
+skipTrack(playtoken, mix) {
+    var req = GetRequest();
+    var url = skipUrl(playtoken, mix.id);
+    printlnTo(stderr, url.path);
+    var sock = sendRequest(req, url);
+    var resp = parseResponse(sock, req);
+    // XXX: check for errors (?) look at skip protocol
+    return move(parseTrack(resp.body));
 }
