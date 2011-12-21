@@ -221,6 +221,12 @@ private parseTrack(string) {
         if (xmlStrcmp(node^.name, xmlString("track")) == 0) {
             trackNode = node;
             break;
+        } else if (xmlStrcmp(node^.name, xmlString("at-end")) == 0) {
+            var atEndStr = nodeListGetString(doc, node^.children);
+            if (trim(atEndStr) == "true") {
+                printlnTo(stderr, "At the end of playlist");
+                return nothing(Track);
+            }
         }
     }
 
@@ -243,6 +249,12 @@ private parseTrack(string) {
         } else if (name == "url") {
             track.url = nodeListGetString(doc, node^.children);
         }
+    }
+
+    // Sanity check?
+    if (track.name == "") {
+        printlnTo(stderr, "Sanity check -- track has empty name. Generated from:");
+        printlnTo(stderr, string);
     }
 
     return move(Maybe(track));
