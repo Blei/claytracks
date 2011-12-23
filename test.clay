@@ -25,6 +25,9 @@ private var songReported? = false;
 private var playStopButton = null(GtkButton);
 private var skipButton = null(GtkButton);
 
+private var currentMixList = Vector[Mix]();
+private var mixListBox = null(GtkBox);
+
 private external watchBus(bus: Pointer[GstBus], message: Pointer[GstMessage], data: gpointer) : gboolean {
 
     var msgType = message^.type;
@@ -94,6 +97,24 @@ private external clickedSkip(button: Pointer[GtkButton], data: gpointer) {
     currentTrack = skipTrack(playtoken, mix);
     // TODO show indication if skipping fails
     playTrack();
+}
+
+private external destroyWidget(widget: Pointer[GtkWidget], data: gpointer) {
+    gtk_widget_destroy(widget);
+}
+
+private external clickedReload(button: Pointer[GtkButton], data: gpointer) {
+    println("Reloading mix list");
+
+    gtk_container_foreach(Pointer[GtkContainer](mixListBox),
+        GtkCallback(destroyWidget), gpointer(0));
+
+    currentMixList = getMixes();
+    for (mix in currentMixList) {
+        addMixToContainer(mix, mixListBox);
+    }
+
+    gtk_widget_show_all(Pointer[GtkWidget](mixListBox));
 }
 
 private external registerPlayingSong(clock: Pointer[GstClock], time: GstClockTime,
@@ -182,9 +203,18 @@ private addMixToContainer(mix, container) {
     var hbox = gtk_hbox_new(FALSE, 5);
     gtk_container_add(Pointer[GtkContainer](container), Pointer[GtkWidget](hbox));
 
+/*
+    var alignment = gtk_alignment_new(0.5f, 0.5f, 0f, 0f);
+    gtk_box_pack_start(Pointer[GtkBox](hbox), alignment, TRUE, TRUE, 0u);
+    */
+
     var label = gtk_label_new(cstring(mix.name));
-    gtk_box_pack_start(Pointer[GtkBox](hbox), Pointer[GtkWidget](label),
-        TRUE, TRUE, UInt32(0));
+    //gtk_container_add(Pointer[GtkContainer](alignment), label);
+    gtk_box_pack_start(Pointer[GtkBox](hbox), label, TRUE, FALSE, 0u);
+    gtk_label_set_justify(Pointer[GtkLabel](label), GTK_JUSTIFY_CENTER);
+    gtk_misc_set_alignment(Pointer[GtkMisc](label), 0.5f, 0.5f);
+    gtk_label_set_line_wrap(Pointer[GtkLabel](label), TRUE);
+    gtk_widget_set_size_request(label, 300, -1);
 
     var imageWidget = gtk_image_new_from_pixbuf(image);
     gtk_box_pack_end(Pointer[GtkBox](hbox), Pointer[GtkWidget](imageWidget),
@@ -204,20 +234,24 @@ private setControlButtonsSensitive(sensitive?) {
     }
 }
 
-main(argc, argv) {
-    var mixes = getMixes();
-    
-    playtoken = getPlaytoken();
-    println("play token is ", playtoken);
-
+private initGstreamer(argcPointer, argvPointer) {
     // let's get some sound going on!
-    gst_init(&argc, &argv);
+    gst_init(argcPointer, argvPointer);
 
     playbin = gst_element_factory_make(cstring("playbin2"), cstring("play"));
 
     var bus = gst_element_get_bus(playbin);
     gst_bus_add_watch(bus, GstBusFunc(watchBus), gpointer(0));
     gst_object_unref(gpointer(bus));
+}
+
+main(argc, argv) {
+    currentMixList = getMixes();
+    
+    playtoken = getPlaytoken();
+    println("play token is ", playtoken);
+
+    initGstreamer(&argc, &argv);
     
     // gui ftw
     gtk_init(&argc, &argv);
@@ -255,16 +289,22 @@ main(argc, argv) {
 
     var scrolledWindow = gtk_scrolled_window_new(null(GtkAdjustment), null(GtkAdjustment));
     gtk_scrolled_window_set_policy(Pointer[GtkScrolledWindow](scrolledWindow),
-        GTK_POLICY_AUTOMATIC, GTK_POLICY_AUTOMATIC);
+        GTK_POLICY_NEVER, GTK_POLICY_AUTOMATIC);
     gtk_box_pack_start_defaults(Pointer[GtkBox](windowBox), Pointer[GtkWidget](scrolledWindow));
 
-    var vbox = gtk_vbox_new(FALSE, 5);
+    mixListBox = Pointer[GtkBox](gtk_vbox_new(FALSE, 5));
     gtk_scrolled_window_add_with_viewport(
-        Pointer[GtkScrolledWindow](scrolledWindow), Pointer[GtkWidget](vbox));
+        Pointer[GtkScrolledWindow](scrolledWindow), Pointer[GtkWidget](mixListBox));
 
-    for (mix in mixes) {
-        addMixToContainer(mix, vbox);
+    for (mix in currentMixList) {
+        addMixToContainer(mix, mixListBox);
     }
+
+    var reloadButton = gtk_button_new_with_label(cstring("Reload List"));
+    gtk_box_pack_start(Pointer[GtkBox](windowBox), Pointer[GtkWidget](reloadButton),
+        FALSE, FALSE, 0u);
+    gSignalConnect(reloadButton, cstring("clicked"),
+        GCallback(clickedReload), gpointer(0));
 
     gtk_widget_show_all(Pointer[GtkWidget](window));
 
