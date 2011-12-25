@@ -1,0 +1,38 @@
+import unix.*;
+
+record OSErrorWithInfo (
+    code: Int,
+    info: String,
+);
+
+instance Exception (OSErrorWithInfo);
+
+alias ensureSyscall(returnCode: Int) {
+    if (returnCode != 0) {
+        var code = errno();
+        var buf = String();
+        printTo(buf,  StaticName(__FILE__), "(", __LINE__, ",", __COLUMN__, ") <",
+            __ARG__ returnCode, "> failed");
+        throw OSErrorWithInfo(code, move(buf));
+    }
+}
+
+alias overload ensureSyscall(returnCode: Int, callback) {
+    if (returnCode != 0) {
+        var code = errno();
+        var buf = String();
+        printTo(buf,  StaticName(__FILE__), "(", __LINE__, ",", __COLUMN__, ") <",
+            __ARG__ returnCode, "> failed");
+        var err = OSErrorWithInfo(code, move(buf));
+        callback(err);
+    }
+}
+
+overload printTo(stream, x: OSErrorWithInfo) {
+    printTo(stream, "error(", x.code, ") ", x.info, ": ");
+    printErrorMessageTo(stream, x.code);
+}
+
+overload printReprTo(stream, x: OSErrorWithInfo) {
+    printTo(stream, "OSErrorWithInfo(", errorCodeName(x.code), ") ", x.info);
+}

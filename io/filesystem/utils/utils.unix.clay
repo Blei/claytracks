@@ -1,0 +1,42 @@
+import libc;
+import unix;
+
+import unix.utility.*;
+
+private alias MKDIR_MODE = unix.mode_t(octal(#"0775"));
+
+[S | String?(S)]
+mkdir(d: S) {
+    ensureSyscall(unix.mkdir(cstring(d), MKDIR_MODE));
+}
+
+enum StatResult (
+    STAT_NOTHING,
+    STAT_FILE,
+    STAT_DIRECTORY,
+    STAT_OTHER,
+);
+
+[S | String?(S)]
+fileType(name: S) {
+    var buf = unix.Struct_stat();
+    var noFile? = false;
+    ensureSyscall(unix.stat(cstring(name), &buf)) : err -> {
+        if (err.code == unix.ENOENT) {
+            noFile? = true;
+        } else {
+            throw err;
+        }
+    }
+    if (noFile?) {
+        return STAT_NOTHING;
+    }
+
+    switch (bitand(buf.st_mode, unix.S_IFMT))
+    case (unix.S_IFREG)
+        return STAT_FILE;
+    case (unix.S_IFDIR)
+        return STAT_DIRECTORY;
+    else
+        return STAT_OTHER;
+}

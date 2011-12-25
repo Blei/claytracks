@@ -1,4 +1,5 @@
 import unix.*;
+import unix.utility.*;
 
 private getNumberOfCpus() {
     return SizeT(sysconf(_SC_NPROCESSORS_ONLN));
@@ -13,7 +14,7 @@ private record ParallelForInfo (
     end : SizeT,
 );
 
-private external parallelForCallback(data: RawPointer) : RawPointer {
+private external parallelEachNumberCallback(data: RawPointer) : RawPointer {
     var info = Pointer[ParallelForInfo](data);
     var index = info^.index;
     while (index < info^.end) {
@@ -42,29 +43,17 @@ overload parallelEachNumber(numCalls: SizeT, nThreads: SizeT, callback) {
     resize(threadIds, nThreads);
 
     var attr = pthread_attr_t();
-    var res = pthread_attr_init(&attr);
-    if (res != 0) {
-        error("pthread_attr_init failed");
-    }
+    ensureSyscall(pthread_attr_init(&attr));
 
     for (i in range(nThreads)) {
-        res = pthread_create(&threadIds[i], &attr, parallelForCallback, RawPointer(&info));
-        if (res != 0) {
-            error("pthread_create failed");
-        }
+        ensureSyscall(pthread_create(&threadIds[i], &attr, parallelEachNumberCallback, RawPointer(&info)));
     }
 
-    res = pthread_attr_destroy(&attr);
-    if (res != 0) {
-        error("pthread_attr_destroy failed");
-    }
+    ensureSyscall(pthread_attr_destroy(&attr));
 
     for (i in range(nThreads)) {
         var threadResult = RawPointer();
-        var res = pthread_join(threadIds[i], &threadResult);
-        if (res != 0) {
-            error("pthread_join failed");
-        }
+        ensureSyscall(pthread_join(threadIds[i], &threadResult));
         if (not null?(threadResult) and threadResult != PTHREAD_CANCELED) {
             free(threadResult);
         }
@@ -95,4 +84,28 @@ inline parallelMapHere(seq: S, numThreads: SizeT, callback: C) {
 [S, C]
 inline overload parallelMapHere(seq: S, callback: C) {
     parallelMap(seq, seq, callback);
+}
+
+private external spawnCallback(data: RawPointer) : RawPointer {
+    var callback = Pointer[Lambda[[], []]](data);
+    finally freeObject(callback);
+
+    callback^();
+
+    return RawPointer(0);
+}
+
+[C]
+spawn(callback: C) {
+    var lambdaPtr = allocateObject(Lambda[[], []](callback));
+
+    var attr = pthread_attr_t();
+    ensureSyscall(pthread_attr_init(&attr));
+    ensureSyscall(pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_DETACHED));
+
+    var threadId = pthread_t();
+    ensureSyscall(pthread_create(&threadId, &attr, spawnCallback, RawPointer(lambdaPtr)));
+
+    ensureSyscall(pthread_attr_destroy(&attr));
+    return threadId;
 }
