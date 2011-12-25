@@ -9,6 +9,8 @@ import gtk.*;
 import gdkpixbuf.*;
 import parallel.*;
 
+private alias nothingPlayingText = cstring("Nothing playing currently");
+
 private var playbin = Pointer[GstElement](0);
 private var playtoken = String();
 
@@ -16,7 +18,6 @@ private var currentTrack = nothing(Track);
 private var currentMix = nothing(Mix);
 
 private var currentTrackLabel = null(GtkLabel);
-private var nothingPlayingText = cstring("Nothing playing currently");
 private var currentlyPlaying? = false;
 
 private var currentClockId = nothing(GstClockID);
@@ -260,10 +261,7 @@ private initGstreamer(argcPointer, argvPointer) {
 }
 
 main(argc, argv) {
-    currentMixList = getMixes();
-    
     playtoken = getPlaytoken();
-    println("play token is ", playtoken);
 
     initGstreamer(&argc, &argv);
     

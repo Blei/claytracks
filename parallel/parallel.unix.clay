@@ -1,23 +1,5 @@
 import unix.*;
 
-[| SizeT == UInt64]
-inline cmpxchgSizeT(dest: SizeT, old: SizeT, new: SizeT) --> returned: SizeT __llvm__ {
-    %1 = load i64* %old
-    %2 = load i64* %new
-    %3 = cmpxchg i64* %dest, i64 %1, i64 %2 seq_cst
-    store i64 %3, i64* %returned
-    ret i8* null
-}
-
-[| SizeT == UInt32]
-inline overload cmpxchgSizeT(dest: SizeT, old: SizeT, new: SizeT) --> returned: SizeT __llvm__ {
-    %1 = load i32* %old
-    %2 = load i32* %new
-    %3 = cmpxchg i32* %dest, i32 %1, i32 %2 seq_cst
-    store i32 %3, i32* %returned
-    ret i8* null
-}
-
 private getNumberOfCpus() {
     return SizeT(sysconf(_SC_NPROCESSORS_ONLN));
 }
@@ -35,7 +17,7 @@ private external parallelForCallback(data: RawPointer) : RawPointer {
     var info = Pointer[ParallelForInfo](data);
     var index = info^.index;
     while (index < info^.end) {
-        var old = cmpxchgSizeT(info^.index, index, index + 1);
+        var old = atomicCompareExchange(OrderSeqCst, &info^.index, index, index + 1);
         if (index == old) {
             info^.callback(index);
         }

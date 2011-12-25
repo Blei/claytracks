@@ -139,7 +139,6 @@ private parseMixes(string) {
     }
 
     xmlFreeDoc(doc);
-    printlnTo(stderr, "parsing mixes has finished. there are ", size(mixes), " mixes");
     return move(mixes);
 }
 
@@ -179,7 +178,7 @@ private parsePlaytoken(string) {
 
     return maybe(maybePlaytokenNode)
         : node -> nodeListGetString(doc, node^.children)
-        :: () -> String();
+        :: () -> { error("No playtoken in response"); return String(); };
 }
 
 getPlaytoken() {
