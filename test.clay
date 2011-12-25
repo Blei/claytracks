@@ -7,6 +7,7 @@ import gio.*;
 import gobject.*;
 import gtk.*;
 import gdkpixbuf.*;
+import parallel.*;
 
 private var playbin = Pointer[GstElement](0);
 private var playtoken = String();
@@ -110,8 +111,9 @@ private external clickedReload(button: Pointer[GtkButton], data: gpointer) {
         GtkCallback(destroyWidget), gpointer(0));
 
     currentMixList = getMixes();
-    for (mix in currentMixList) {
-        addMixToContainer(mix, mixListBox);
+    var images = getMixImages(currentMixList);
+    for (i in range(size(currentMixList))) {
+        addMixToContainer(currentMixList[i], images[i], mixListBox);
     }
 
     gtk_widget_show_all(Pointer[GtkWidget](mixListBox));
@@ -182,8 +184,7 @@ private togglePlaying() {
     currentlyPlaying? = not currentlyPlaying?;
 }
 
-private addMixToContainer(mix, container) {
-    //println("cover url is ", mix.sq133CoverUrl);
+private getMixImage(mix) {
     var url = require(parseUrl(mix.sq133CoverUrl));
     var req = GetRequest();
     var sock = sendRequest(req, url);
@@ -197,13 +198,24 @@ private addMixToContainer(mix, container) {
     var image = gdk_pixbuf_new_from_stream(memoryStream, null(GCancellable), &error);
     if (not null?(error)) {
         println("error creating pixbuf ", String(error^.message));
-        return;
+        return null(GdkPixbuf);
+    } else {
+        return image;
     }
+}
 
+private getMixImages(mixes) {
+    var images = Vector[Pointer[GdkPixbuf]]();
+    resize(images, size(mixes));
+    parallelMap(mixes, images) : mix -> getMixImage(mix);
+    return move(images);
+}
+
+private addMixToContainer(mix, image, container) {
     var hbox = gtk_hbox_new(FALSE, 5);
     gtk_container_add(Pointer[GtkContainer](container), Pointer[GtkWidget](hbox));
 
-/*
+    /*
     var alignment = gtk_alignment_new(0.5f, 0.5f, 0f, 0f);
     gtk_box_pack_start(Pointer[GtkBox](hbox), alignment, TRUE, TRUE, 0u);
     */
@@ -216,9 +228,11 @@ private addMixToContainer(mix, container) {
     gtk_label_set_line_wrap(Pointer[GtkLabel](label), TRUE);
     gtk_widget_set_size_request(label, 300, -1);
 
-    var imageWidget = gtk_image_new_from_pixbuf(image);
-    gtk_box_pack_end(Pointer[GtkBox](hbox), Pointer[GtkWidget](imageWidget),
-        FALSE, FALSE, UInt32(0));
+    if (not null?(image)) {
+        var imageWidget = gtk_image_new_from_pixbuf(image);
+        gtk_box_pack_end(Pointer[GtkBox](hbox), Pointer[GtkWidget](imageWidget),
+            FALSE, FALSE, UInt32(0));
+    }
 
     var button = gtk_button_new_with_label(cstring("Play"));
     gtk_box_pack_end(Pointer[GtkBox](hbox), Pointer[GtkWidget](button),
@@ -296,8 +310,10 @@ main(argc, argv) {
     gtk_scrolled_window_add_with_viewport(
         Pointer[GtkScrolledWindow](scrolledWindow), Pointer[GtkWidget](mixListBox));
 
-    for (mix in currentMixList) {
-        addMixToContainer(mix, mixListBox);
+    currentMixList = getMixes();
+    var images = getMixImages(currentMixList);
+    for (i in range(size(currentMixList))) {
+        addMixToContainer(currentMixList[i], images[i], mixListBox);
     }
 
     var reloadButton = gtk_button_new_with_label(cstring("Reload List"));

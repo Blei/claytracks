@@ -1,0 +1,116 @@
+import unix.*;
+
+[| SizeT == UInt64]
+inline cmpxchgSizeT(dest: SizeT, old: SizeT, new: SizeT) --> returned: SizeT __llvm__ {
+    %1 = load i64* %old
+    %2 = load i64* %new
+    %3 = cmpxchg i64* %dest, i64 %1, i64 %2 seq_cst
+    store i64 %3, i64* %returned
+    ret i8* null
+}
+
+[| SizeT == UInt32]
+inline overload cmpxchgSizeT(dest: SizeT, old: SizeT, new: SizeT) --> returned: SizeT __llvm__ {
+    %1 = load i32* %old
+    %2 = load i32* %new
+    %3 = cmpxchg i32* %dest, i32 %1, i32 %2 seq_cst
+    store i32 %3, i32* %returned
+    ret i8* null
+}
+
+private getNumberOfCpus() {
+    return SizeT(sysconf(_SC_NPROCESSORS_ONLN));
+}
+
+// TODO this should be in unix
+alias PTHREAD_CANCELED = RawPointer(-1);
+
+private record ParallelForInfo (
+    callback : Lambda[[SizeT], []],
+    index : SizeT,
+    end : SizeT,
+);
+
+private external parallelForCallback(data: RawPointer) : RawPointer {
+    var info = Pointer[ParallelForInfo](data);
+    var index = info^.index;
+    while (index < info^.end) {
+        var old = cmpxchgSizeT(info^.index, index, index + 1);
+        if (index == old) {
+            info^.callback(index);
+        }
+        index = info^.index;
+    }
+    return RawPointer(0);
+}
+
+parallelEachNumber(numCalls: SizeT, callback) {
+    var numCpus = getNumberOfCpus();
+    parallelEachNumber(numCalls, numCpus, callback);
+}
+
+overload parallelEachNumber(numCalls: SizeT, nThreads: SizeT, callback) {
+    if (numCalls == 0) {
+        return;
+    }
+
+    var info = ParallelForInfo(Lambda[[SizeT], []](callback), SizeT(0), numCalls);
+
+    var threadIds = Vector[pthread_t]();
+    resize(threadIds, nThreads);
+
+    var attr = pthread_attr_t();
+    var res = pthread_attr_init(&attr);
+    if (res != 0) {
+        error("pthread_attr_init failed");
+    }
+
+    for (i in range(nThreads)) {
+        res = pthread_create(&threadIds[i], &attr, parallelForCallback, RawPointer(&info));
+        if (res != 0) {
+            error("pthread_create failed");
+        }
+    }
+
+    res = pthread_attr_destroy(&attr);
+    if (res != 0) {
+        error("pthread_attr_destroy failed");
+    }
+
+    for (i in range(nThreads)) {
+        var threadResult = RawPointer();
+        var res = pthread_join(threadIds[i], &threadResult);
+        if (res != 0) {
+            error("pthread_join failed");
+        }
+        if (not null?(threadResult) and threadResult != PTHREAD_CANCELED) {
+            free(threadResult);
+        }
+    }
+
+    assert(info.index == info.end);
+}
+
+[S1, S2, C]
+inline parallelMap(inseq: S1, outseq: S2, numThreads: SizeT, callback: C) {
+    assert(size(inseq) == size(outseq));
+    parallelEachNumber(size(inseq), numThreads) : (i) -> {
+        outseq[i] = callback(inseq[i]);
+    }
+}
+
+[S1, S2, C]
+inline overload parallelMap(inseq: S1, outseq: S2, callback: C) {
+    var numCpus = getNumberOfCpus();
+    parallelMap(inseq, outseq, numCpus, callback);
+}
+
+[S, C]
+inline parallelMapHere(seq: S, numThreads: SizeT, callback: C) {
+    parallelMap(seq, seq, numThreads, callback);
+}
+
+[S, C]
+inline overload parallelMapHere(seq: S, callback: C) {
+    parallelMap(seq, seq, callback);
+}
