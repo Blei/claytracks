@@ -34,15 +34,13 @@ record Mix (
     path: String,
     slug: String,
     name: String,
-    tagListCach: Vector[String],
+    tagListCache: Vector[String],
     playsCount: Int,
     description: String,
     id: String,
     originalCoverUrl: String,
     sq133CoverUrl: String
 );
-overload Mix() = Mix(String(), String(), String(), Vector[String](), 0,
-    String(), String(), String(), String());
 
 record Track (
     releaseName: String,
@@ -97,6 +95,12 @@ private parseMix(doc, mixNode, mixes) {
             parseCoverUrls(doc, node, mix);
         } else if (name == "user") {
             parseUser(doc, node, mix);
+        } else if (name == "tag-list-cache") {
+            var tagString = nodeListGetString(doc, node^.children);
+            var tagList = split(tagString, ",");
+            for (tag in tagList) {
+                push(mix.tagListCache, trim(tag));
+            }
         }
     }
 

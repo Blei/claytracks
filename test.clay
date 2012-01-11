@@ -229,13 +229,23 @@ private addMixToContainer(mix, image, container) {
     gtk_box_pack_start(Pointer[GtkBox](hbox), alignment, TRUE, TRUE, 0u);
     */
 
-    var label = gtk_label_new(cstring(mix.name));
-    //gtk_container_add(Pointer[GtkContainer](alignment), label);
-    gtk_box_pack_start(Pointer[GtkBox](hbox), label, TRUE, FALSE, 0u);
-    gtk_label_set_justify(Pointer[GtkLabel](label), GTK_JUSTIFY_CENTER);
-    gtk_misc_set_alignment(Pointer[GtkMisc](label), 0.5f, 0.5f);
-    gtk_label_set_line_wrap(Pointer[GtkLabel](label), TRUE);
-    gtk_widget_set_size_request(label, 300, -1);
+    var labelsBox = gtk_vbox_new(FALSE, 1);
+    gtk_box_pack_start(Pointer[GtkBox](hbox), labelsBox, TRUE, FALSE, 0u);
+
+    var nameLabel = gtk_label_new(cstring(mix.name));
+    gtk_box_pack_start(Pointer[GtkBox](labelsBox), nameLabel, TRUE, FALSE, 0u);
+
+    var tagsString = "Tags: " + join(String(", "), mix.tagListCache);
+    var tagsLabel = gtk_label_new(cstring(tagsString));
+    gtk_box_pack_end(Pointer[GtkBox](labelsBox), tagsLabel, TRUE, FALSE, 0u);
+
+    ..for (label in nameLabel, tagsLabel) {
+        //gtk_container_add(Pointer[GtkContainer](alignment), label);
+        gtk_widget_set_size_request(label, 300, -1);
+        gtk_label_set_justify(Pointer[GtkLabel](label), GTK_JUSTIFY_CENTER);
+        gtk_misc_set_alignment(Pointer[GtkMisc](label), 0.5f, 0.5f);
+        gtk_label_set_line_wrap(Pointer[GtkLabel](label), TRUE);
+    }
 
     if (not null?(image)) {
         var imageWidget = gtk_image_new_from_pixbuf(image);
