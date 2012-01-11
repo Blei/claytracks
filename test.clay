@@ -35,6 +35,8 @@ private var skipButton = null(GtkButton);
 private var currentMixList = Vector[Mix]();
 private var mixListBox = null(GtkBox);
 
+private var currentPageNumber = 1;
+
 private external watchBus(bus: Pointer[GstBus], message: Pointer[GstMessage], data: gpointer) : gboolean {
 
     var msgType = message^.type;
@@ -109,18 +111,19 @@ private external destroyWidget(widget: Pointer[GtkWidget], data: gpointer) {
 }
 
 private external clickedReload(button: Pointer[GtkButton], data: gpointer) {
-    println("Reloading mix list");
+    setCurrentMixes(getMixesForPage(currentPageNumber));
+}
 
-    gtk_container_foreach(Pointer[GtkContainer](mixListBox),
-        GtkCallback(destroyWidget), gpointer(0));
-
-    currentMixList = getMixes();
-    var images = getMixImages(currentMixList);
-    for (i in range(size(currentMixList))) {
-        addMixToContainer(currentMixList[i], images[i], mixListBox);
+private external clickedPreviousPage(button: Pointer[GtkButton], data: gpointer) {
+    if (currentPageNumber > 1) {
+        currentPageNumber -= 1;
+        setCurrentMixes(getMixesForPage(currentPageNumber));
     }
+}
 
-    gtk_widget_show_all(Pointer[GtkWidget](mixListBox));
+private external clickedNextPage(button: Pointer[GtkButton], data: gpointer) {
+    currentPageNumber += 1;
+    setCurrentMixes(getMixesForPage(currentPageNumber));
 }
 
 private external registerPlayingSong(clock: Pointer[GstClock], time: GstClockTime,
@@ -248,6 +251,20 @@ private addMixToContainer(mix, image, container) {
         GCallback(clickedPlay), gpointer(&mix));
 }
 
+private setCurrentMixes(mixes) {
+    // Remove old mixes
+    gtk_container_foreach(Pointer[GtkContainer](mixListBox),
+        GtkCallback(destroyWidget), gpointer(0));
+
+    currentMixList = mixes;
+    var images = getMixImages(currentMixList);
+    for (i in range(size(currentMixList))) {
+        addMixToContainer(currentMixList[i], images[i], mixListBox);
+    }
+
+    gtk_widget_show_all(Pointer[GtkWidget](mixListBox));
+}
+
 private setControlButtonsSensitive(sensitive?) {
     ..for (button in playPauseButton, skipButton) {
         gtk_widget_set_sensitive(Pointer[GtkWidget](button), if (sensitive?) TRUE else FALSE);
@@ -313,17 +330,29 @@ main(argc, argv) {
     gtk_scrolled_window_add_with_viewport(
         Pointer[GtkScrolledWindow](scrolledWindow), Pointer[GtkWidget](mixListBox));
 
-    currentMixList = getMixes();
-    var images = getMixImages(currentMixList);
-    for (i in range(size(currentMixList))) {
-        addMixToContainer(currentMixList[i], images[i], mixListBox);
-    }
+    setCurrentMixes(getMixes());
+
+    var pageBox = gtk_hbox_new(FALSE, 10);
+    gtk_box_pack_start(Pointer[GtkBox](windowBox), Pointer[GtkWidget](pageBox),
+        FALSE, FALSE, 0u);
+
+    var previousPageButton = gtk_button_new_with_label(cstring("Previous Page"));
+    gtk_box_pack_start(Pointer[GtkBox](pageBox), Pointer[GtkWidget](previousPageButton),
+        FALSE, FALSE, 0u);
+    gSignalConnect(previousPageButton, cstring("clicked"),
+        GCallback(clickedPreviousPage), gpointer(0));
 
     var reloadButton = gtk_button_new_with_label(cstring("Reload List"));
-    gtk_box_pack_start(Pointer[GtkBox](windowBox), Pointer[GtkWidget](reloadButton),
-        FALSE, FALSE, 0u);
+    gtk_box_pack_start(Pointer[GtkBox](pageBox), Pointer[GtkWidget](reloadButton),
+        TRUE, FALSE, 0u);
     gSignalConnect(reloadButton, cstring("clicked"),
         GCallback(clickedReload), gpointer(0));
+
+    var nextPageButton = gtk_button_new_with_label(cstring("Next Page"));
+    gtk_box_pack_end(Pointer[GtkBox](pageBox), Pointer[GtkWidget](nextPageButton),
+        FALSE, FALSE, 0u);
+    gSignalConnect(nextPageButton, cstring("clicked"),
+        GCallback(clickedNextPage), gpointer(0));
 
     gtk_widget_show_all(Pointer[GtkWidget](window));
 

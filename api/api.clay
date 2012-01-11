@@ -2,9 +2,12 @@ import maybe.*;
 import http.*;
 import libxml.*;
 
-// apparently the default url doesn't give the most recent tracks when not logged
-// in?
 private var mixesUrl = require(parseUrl("http://8tracks.com/mixes.xml?sort=recent"));
+
+private mixesUrlForPage(pageNumber) {
+    return require(parseUrl("http://8tracks.com/mixes.xml?sort=recent&page=" + str(pageNumber)));
+}
+
 private var playtokenUrl = require(parseUrl("http://8tracks.com/sets/new.xml"));
 
 private playUrl(playtoken, mixId) {
@@ -147,6 +150,14 @@ getMixes() {
     var sock = sendRequest(req, mixesUrl);
     var resp = parseResponse(sock, req);
     //println(resp.body);
+    return move(parseMixes(resp.body));
+}
+
+getMixesForPage(pageNumber) {
+    assert(pageNumber >= 1);
+    var req = GetRequest();
+    var sock = sendRequest(req, mixesUrlForPage(pageNumber));
+    var resp = parseResponse(sock, req);
     return move(parseMixes(resp.body));
 }
 
