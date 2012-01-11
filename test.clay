@@ -62,13 +62,11 @@ private external watchBus(bus: Pointer[GstBus], message: Pointer[GstMessage], da
         g_error_free(err);
         g_free(gpointer(debugInfo));
         currentlyPlaying? = false;
-
-        //gst_element_set_state(playbin, GST_STATE_NULL);
     }
     case (GST_MESSAGE_EOS) {
         var mix = require(currentMix);
-        currentTrack = getNextTrack(playtoken, mix);
-        playTrack();
+        var maybeTrack = getNextTrack(playtoken, mix);
+        changeTrack(maybeTrack);
     }
     else {
         //println(String(gst_message_type_get_name(msgType)));
@@ -84,8 +82,8 @@ private external destroying(widget: Pointer[GtkWidget], data: gpointer) {
 private external clickedPlay(button: Pointer[GtkButton], data: gpointer) {
     var mix = Pointer[Mix](data);
     currentMix = Maybe(mix^);
-    currentTrack = getTrack(playtoken, mix^);
-    playTrack();
+    var maybeTrack = getTrack(playtoken, mix^);
+    changeTrack(maybeTrack);
 }
 
 private external clickedPlayPause(button: Pointer[GtkButton], data: gpointer) {
@@ -101,9 +99,9 @@ private external clickedSkip(button: Pointer[GtkButton], data: gpointer) {
 
     var mix = require(currentMix);
     // TODO is skipping allowed?
-    currentTrack = skipTrack(playtoken, mix);
+    var maybeTrack = skipTrack(playtoken, mix);
     // TODO show indication if skipping fails
-    playTrack();
+    changeTrack(maybeTrack);
 }
 
 private external destroyWidget(widget: Pointer[GtkWidget], data: gpointer) {
@@ -135,7 +133,7 @@ private external registerPlayingSong(clock: Pointer[GstClock], time: GstClockTim
     gst_clock_id_unref(id);
     currentClockId = nothing(GstClockID);
 
-    // return value ignored, according to docs
+    // return value is ignored, according to docs
     return TRUE;
 }
 
@@ -158,8 +156,9 @@ private registerSongReporter() {
     songReported? = false;
 }
 
-private playTrack() {
-    maybe(currentTrack) : track -> {
+private changeTrack(maybeTrack) {
+    currentTrack = maybeTrack;
+    maybe(maybeTrack) : track -> {
         // Stop left-over song reporter
         if (songReporterRegistered? and not songReported?) {
             gst_clock_id_unschedule(require(currentClockId));
