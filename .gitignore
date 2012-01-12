@@ -2,4 +2,5 @@
 .*.swp
 a.out
 test
+test.d
 *.o
