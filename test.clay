@@ -35,7 +35,9 @@ private var skipButton = null(GtkButton);
 private var currentMixList = Vector[Mix]();
 private var mixListBox = null(GtkBox);
 
-private var currentPageNumber = 1;
+private var scrolledWindow = null(GtkScrolledWindow);
+
+private var mixSearchParameters = MixSearchParameters();
 
 private external watchBus(bus: Pointer[GstBus], message: Pointer[GstMessage], data: gpointer) : gboolean {
 
@@ -111,19 +113,21 @@ private external destroyWidget(widget: Pointer[GtkWidget], data: gpointer) {
 }
 
 private external clickedReload(button: Pointer[GtkButton], data: gpointer) {
-    setCurrentMixes(getMixesForPage(currentPageNumber));
+    setCurrentMixes(getMixes(mixSearchParameters));
 }
 
 private external clickedPreviousPage(button: Pointer[GtkButton], data: gpointer) {
-    if (currentPageNumber > 1) {
-        currentPageNumber -= 1;
-        setCurrentMixes(getMixesForPage(currentPageNumber));
+    if (mixSearchParameters.page > 1) {
+        mixSearchParameters.page -= 1;
+        setCurrentMixes(getMixes(mixSearchParameters));
+        scrollUp();
     }
 }
 
 private external clickedNextPage(button: Pointer[GtkButton], data: gpointer) {
-    currentPageNumber += 1;
-    setCurrentMixes(getMixesForPage(currentPageNumber));
+    mixSearchParameters.page += 1;
+    setCurrentMixes(getMixes(mixSearchParameters));
+    scrollUp();
 }
 
 private external registerPlayingSong(clock: Pointer[GstClock], time: GstClockTime,
@@ -281,6 +285,12 @@ private setControlButtonsSensitive(sensitive?) {
     }
 }
 
+private scrollUp() {
+    var adjustment = gtk_scrolled_window_get_vadjustment(scrolledWindow);
+    gtk_adjustment_set_value(adjustment, gtk_adjustment_get_lower(adjustment));
+    gtk_scrolled_window_set_vadjustment(scrolledWindow, adjustment);
+}
+
 private initGstreamer(argcPointer, argvPointer) {
     // let's get some sound going on!
     gst_init(argcPointer, argvPointer);
@@ -331,16 +341,16 @@ main(argc, argv) {
     gtk_box_pack_start(Pointer[GtkBox](windowBox), Pointer[GtkWidget](currentTrackLabel),
         FALSE, FALSE, 0u);
 
-    var scrolledWindow = gtk_scrolled_window_new(null(GtkAdjustment), null(GtkAdjustment));
-    gtk_scrolled_window_set_policy(Pointer[GtkScrolledWindow](scrolledWindow),
-        GTK_POLICY_NEVER, GTK_POLICY_AUTOMATIC);
+    scrolledWindow = Pointer[GtkScrolledWindow](
+        gtk_scrolled_window_new(null(GtkAdjustment), null(GtkAdjustment)));
+    gtk_scrolled_window_set_policy(scrolledWindow, GTK_POLICY_NEVER, GTK_POLICY_AUTOMATIC);
     gtk_box_pack_start_defaults(Pointer[GtkBox](windowBox), Pointer[GtkWidget](scrolledWindow));
 
     mixListBox = Pointer[GtkBox](gtk_vbox_new(FALSE, 5));
     gtk_scrolled_window_add_with_viewport(
         Pointer[GtkScrolledWindow](scrolledWindow), Pointer[GtkWidget](mixListBox));
 
-    setCurrentMixes(getMixes());
+    setCurrentMixes(getMixes(mixSearchParameters));
 
     var pageBox = gtk_hbox_new(FALSE, 10);
     gtk_box_pack_start(Pointer[GtkBox](windowBox), Pointer[GtkWidget](pageBox),

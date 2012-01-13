@@ -2,12 +2,6 @@ import maybe.*;
 import http.*;
 import libxml.*;
 
-private var mixesUrl = require(parseUrl("http://8tracks.com/mixes.xml?sort=recent"));
-
-private mixesUrlForPage(pageNumber) {
-    return require(parseUrl("http://8tracks.com/mixes.xml?sort=recent&page=" + str(pageNumber)));
-}
-
 private var playtokenUrl = require(parseUrl("http://8tracks.com/sets/new.xml"));
 
 private playUrl(playtoken, mixId) {
@@ -28,6 +22,29 @@ private skipUrl(playtoken, mixId) {
 private reportingUrl(mixId, trackId) {
     return require(parseUrl("http://8tracks.com/sets/874076615/report.xml?track_id="
         + trackId + "&mix_id=" + mixId));
+}
+
+enum SortMethod ( recent, hot, popular, random );
+
+record MixSearchParameters (
+    page: SizeT,
+    tagList: Vector[String],
+    sortMethod: SortMethod,
+);
+
+overload MixSearchParameters() = MixSearchParameters(SizeT(1), Vector[String](), recent);
+
+mixesUrl(parameters) {
+    var urlString = "http://8tracks.com/mixes.xml?sort=" + str(parameters.sortMethod);
+    if (parameters.page > 1) {
+        urlString += "&page=" + str(parameters.page);
+    }
+    if (size(parameters.tagList) > 0) {
+        var tags = join("+", parameters.tagList);
+        var encodedTags = uriEncode(tags);
+        urlString += "&tag=" + encodedTags;
+    }
+    return require(parseUrl(urlString));
 }
 
 record Mix (
@@ -149,19 +166,11 @@ private parseMixes(string) {
     return move(mixes);
 }
 
-getMixes() {
+getMixes(parameters) {
     var req = GetRequest();
-    var sock = sendRequest(req, mixesUrl);
+    var sock = sendRequest(req, mixesUrl(parameters));
     var resp = parseResponse(sock, req);
     //println(resp.body);
-    return move(parseMixes(resp.body));
-}
-
-getMixesForPage(pageNumber) {
-    assert(pageNumber >= 1);
-    var req = GetRequest();
-    var sock = sendRequest(req, mixesUrlForPage(pageNumber));
-    var resp = parseResponse(sock, req);
     return move(parseMixes(resp.body));
 }
 
