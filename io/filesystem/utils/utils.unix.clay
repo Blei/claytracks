@@ -5,7 +5,7 @@ import unix.utility.*;
 
 private alias MKDIR_MODE = unix.mode_t(octal(#"0775"));
 
-[S | String?(S)]
+[S when String?(S)]
 mkdir(d: S) {
     ensureSyscall(unix.mkdir(cstring(d), MKDIR_MODE));
 }
@@ -17,7 +17,7 @@ enum StatResult (
     STAT_OTHER,
 );
 
-[S | String?(S)]
+[S when String?(S)]
 fileType(name: S) {
     var buf = unix.Struct_stat();
     var noFile? = false;

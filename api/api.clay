@@ -5,23 +5,23 @@ import libxml.*;
 private var playtokenUrl = require(parseUrl("http://8tracks.com/sets/new.xml"));
 
 private playUrl(playtoken, mixId) {
-    return require(parseUrl("http://8tracks.com/sets/" + playtoken
-        + "/play.xml?mix_id=" + mixId));
+    return require(parseUrl("http://8tracks.com/sets/" ++ playtoken
+        ++ "/play.xml?mix_id=" ++ mixId));
 }
 
 private nextUrl(playtoken, mixId) {
-    return require(parseUrl("http://8tracks.com/sets/" + playtoken
-        + "/next.xml?mix_id=" + mixId));
+    return require(parseUrl("http://8tracks.com/sets/" ++ playtoken
+        ++ "/next.xml?mix_id=" ++ mixId));
 }
 
 private skipUrl(playtoken, mixId) {
-    return require(parseUrl("http://8tracks.com/sets/" + playtoken
-        + "/skip.xml?mix_id=" + mixId));
+    return require(parseUrl("http://8tracks.com/sets/" ++ playtoken
+        ++ "/skip.xml?mix_id=" ++ mixId));
 }
 
 private reportingUrl(mixId, trackId) {
     return require(parseUrl("http://8tracks.com/sets/874076615/report.xml?track_id="
-        + trackId + "&mix_id=" + mixId));
+        ++ trackId ++ "&mix_id=" ++ mixId));
 }
 
 enum SortMethod ( recent, hot, popular, random );
@@ -35,14 +35,14 @@ record MixSearchParameters (
 overload MixSearchParameters() = MixSearchParameters(SizeT(1), Vector[String](), recent);
 
 mixesUrl(parameters) {
-    var urlString = "http://8tracks.com/mixes.xml?sort=" + str(parameters.sortMethod);
+    var urlString = "http://8tracks.com/mixes.xml?sort=" ++ str(parameters.sortMethod);
     if (parameters.page > 1) {
-        urlString += "&page=" + str(parameters.page);
+        urlString ++= "&page=" ++ str(parameters.page);
     }
     if (size(parameters.tagList) > 0) {
         var tags = join("+", parameters.tagList);
         var encodedTags = uriEncode(tags);
-        urlString += "&tag=" + encodedTags;
+        urlString ++= "&tag=" ++ encodedTags;
     }
     return require(parseUrl(urlString));
 }
@@ -69,10 +69,10 @@ record Track (
 
 // hack for relative urls
 private fixCoverUrls(mix) {
-    ..for (field in #originalCoverUrl, #sq133CoverUrl) {
+    ..for (field in "originalCoverUrl", "sq133CoverUrl") {
         var str = fieldRef(mix, field);
         if (not beginsWith?(str, "http://")) {
-            fieldRef(mix, field) = "http://8tracks.com" + str;
+            fieldRef(mix, field) = "http://8tracks.com" ++ str;
         }
     }
 }
