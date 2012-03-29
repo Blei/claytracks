@@ -37,12 +37,12 @@ overload MixSearchParameters() = MixSearchParameters(SizeT(1), Vector[String](),
 mixesUrl(parameters) {
     var urlString = "http://8tracks.com/mixes.xml?sort=" ++ str(parameters.sortMethod);
     if (parameters.page > 1) {
-        urlString ++= "&page=" ++ str(parameters.page);
+        urlString ++= ("&page=" ++ str(parameters.page));
     }
     if (size(parameters.tagList) > 0) {
         var tags = join("+", parameters.tagList);
         var encodedTags = uriEncode(tags);
-        urlString ++= "&tag=" ++ encodedTags;
+        urlString ++= ("&tag=" ++ encodedTags);
     }
     return require(parseUrl(urlString));
 }
