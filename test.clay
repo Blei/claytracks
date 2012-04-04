@@ -48,7 +48,7 @@ private external watchBus(bus: Pointer[GstBus], message: Pointer[GstMessage], da
         var oldState = GstState(0);
         var newState = GstState(0);
         var pendingState = GstState(0);
-        gst_message_parse_state_changed(message, &oldState, &newState, &pendingState);
+        gst_message_parse_state_changed(message, @oldState, @newState, @pendingState);
 
         //var newStateName = gst_element_state_get_name(newState);
         //println("Changed state to ", CStringRef(newStateName));
@@ -60,7 +60,7 @@ private external watchBus(bus: Pointer[GstBus], message: Pointer[GstMessage], da
     case (GST_MESSAGE_ERROR) {
         var err = null(GError);
         var debugInfo = null(gchar);
-        gst_message_parse_error(message, &err, &debugInfo);
+        gst_message_parse_error(message, @err, @debugInfo);
         println("Error: ", String(err^.message));
         println("debug info: ", String(debugInfo));
         g_error_free(err);
@@ -118,14 +118,14 @@ private external clickedReload(button: Pointer[GtkButton], data: gpointer) {
 
 private external clickedPreviousPage(button: Pointer[GtkButton], data: gpointer) {
     if (mixSearchParameters.page > 1) {
-        mixSearchParameters.page -= 1;
+        mixSearchParameters.page -: 1;
         setCurrentMixes(getMixes(mixSearchParameters));
         scrollUp();
     }
 }
 
 private external clickedNextPage(button: Pointer[GtkButton], data: gpointer) {
-    mixSearchParameters.page += 1;
+    mixSearchParameters.page +: 1;
     setCurrentMixes(getMixes(mixSearchParameters));
     scrollUp();
 }
@@ -208,7 +208,7 @@ private getMixImage(mix) {
         Int64(size(resp.body)), GDestroyNotify(0));
 
     var error = Pointer[GError](0);
-    var image = gdk_pixbuf_new_from_stream(memoryStream, null(GCancellable), &error);
+    var image = gdk_pixbuf_new_from_stream(memoryStream, null(GCancellable), @error);
     if (not null?(error)) {
         println("error creating pixbuf ", String(error^.message));
         return null(GdkPixbuf);
@@ -262,7 +262,7 @@ private addMixToContainer(mix, image, container) {
         FALSE, FALSE, UInt32(0));
 
     gSignalConnect(button, cstring("clicked"),
-        GCallback(clickedPlay), gpointer(&mix));
+        GCallback(clickedPlay), gpointer(@mix));
 }
 
 private setCurrentMixes(mixes) {
@@ -305,10 +305,10 @@ private initGstreamer(argcPointer, argvPointer) {
 main(argc, argv) {
     playtoken = getPlaytoken();
 
-    initGstreamer(&argc, &argv);
+    initGstreamer(@argc, @argv);
     
     // gui ftw
-    gtk_init(&argc, &argv);
+    gtk_init(@argc, @argv);
 
     var window = gtk_window_new(GTK_WINDOW_TOPLEVEL);
     gtk_window_set_title(Pointer[GtkWindow](window), cstring("Cl8tracks"));
