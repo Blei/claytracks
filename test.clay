@@ -19,6 +19,9 @@ private var pauseButtonText = cstring("Pause");
 private var playbin = Pointer[GstElement](0);
 private var playtoken = String();
 
+private var apiKeyFile = "api-key.txt";
+private var apiKey = String();
+
 private var currentTrack = nothing(Track);
 private var currentMix = nothing(Mix);
 
@@ -69,7 +72,7 @@ private external watchBus(bus: Pointer[GstBus], message: Pointer[GstMessage], da
     }
     case (GST_MESSAGE_EOS) {
         var mix = require(currentMix);
-        var maybeTrack = getNextTrack(playtoken, mix);
+        var maybeTrack = getNextTrack(apiKey, playtoken, mix);
         changeTrack(maybeTrack);
     }
     else {
@@ -86,7 +89,7 @@ private external destroying(widget: Pointer[GtkWidget], data: gpointer) {
 private external clickedPlay(button: Pointer[GtkButton], data: gpointer) {
     var mix = Pointer[Mix](data);
     currentMix = Maybe(mix^);
-    var maybeTrack = getTrack(playtoken, mix^);
+    var maybeTrack = getTrack(apiKey, playtoken, mix^);
     changeTrack(maybeTrack);
 }
 
@@ -103,7 +106,7 @@ private external clickedSkip(button: Pointer[GtkButton], data: gpointer) {
 
     var mix = require(currentMix);
     // TODO is skipping allowed?
-    var maybeTrack = skipTrack(playtoken, mix);
+    var maybeTrack = skipTrack(apiKey, playtoken, mix);
     // TODO show indication if skipping fails
     changeTrack(maybeTrack);
 }
@@ -113,20 +116,20 @@ private external destroyWidget(widget: Pointer[GtkWidget], data: gpointer) {
 }
 
 private external clickedReload(button: Pointer[GtkButton], data: gpointer) {
-    setCurrentMixes(getMixes(mixSearchParameters));
+    setCurrentMixes(getMixes(apiKey, mixSearchParameters));
 }
 
 private external clickedPreviousPage(button: Pointer[GtkButton], data: gpointer) {
     if (mixSearchParameters.page > 1) {
         mixSearchParameters.page -: 1;
-        setCurrentMixes(getMixes(mixSearchParameters));
+        setCurrentMixes(getMixes(apiKey, mixSearchParameters));
         scrollUp();
     }
 }
 
 private external clickedNextPage(button: Pointer[GtkButton], data: gpointer) {
     mixSearchParameters.page +: 1;
-    setCurrentMixes(getMixes(mixSearchParameters));
+    setCurrentMixes(getMixes(apiKey, mixSearchParameters));
     scrollUp();
 }
 
@@ -134,7 +137,7 @@ private external registerPlayingSong(clock: Pointer[GstClock], time: GstClockTim
         id: GstClockID, data: gpointer) : gboolean {
 
     println("Reporting track");
-    reportTrack(require(currentMix), require(currentTrack));
+    reportTrack(apiKey, require(currentMix), require(currentTrack));
     songReported? = true;
 
     gst_clock_id_unref(id);
@@ -302,8 +305,16 @@ private initGstreamer(argcPointer, argvPointer) {
     gst_object_unref(gpointer(bus));
 }
 
+private readApiKey() {
+    var f = File(apiKeyFile, READ);
+    var s = readLine(f);
+    apiKey = trim(s);
+}
+
 main(argc, argv) {
-    playtoken = getPlaytoken();
+    readApiKey();
+
+    playtoken = getPlaytoken(apiKey);
 
     initGstreamer(@argc, @argv);
     
@@ -350,7 +361,7 @@ main(argc, argv) {
     gtk_scrolled_window_add_with_viewport(
         Pointer[GtkScrolledWindow](scrolledWindow), Pointer[GtkWidget](mixListBox));
 
-    setCurrentMixes(getMixes(mixSearchParameters));
+    setCurrentMixes(getMixes(apiKey, mixSearchParameters));
 
     var pageBox = gtk_hbox_new(FALSE, 10);
     gtk_box_pack_start(Pointer[GtkBox](windowBox), Pointer[GtkWidget](pageBox),

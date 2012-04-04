@@ -2,26 +2,31 @@ import maybe.*;
 import http.*;
 import libxml.*;
 
-private var playtokenUrl = require(parseUrl("http://8tracks.com/sets/new.xml"));
+private getPlaytokenUrl(apiKey) =
+    require(parseUrl("http://8tracks.com/sets/new.xml?api_key=" ++ apiKey));
 
-private playUrl(playtoken, mixId) {
+private playUrl(apiKey, playtoken, mixId) {
     return require(parseUrl("http://8tracks.com/sets/" ++ playtoken
-        ++ "/play.xml?mix_id=" ++ mixId));
+        ++ "/play.xml?mix_id=" ++ mixId
+        ++ "&api_key=" ++ apiKey));
 }
 
-private nextUrl(playtoken, mixId) {
+private nextUrl(apiKey, playtoken, mixId) {
     return require(parseUrl("http://8tracks.com/sets/" ++ playtoken
-        ++ "/next.xml?mix_id=" ++ mixId));
+        ++ "/next.xml?mix_id=" ++ mixId
+        ++ "&api_key=" ++ apiKey));
 }
 
-private skipUrl(playtoken, mixId) {
+private skipUrl(apiKey, playtoken, mixId) {
     return require(parseUrl("http://8tracks.com/sets/" ++ playtoken
-        ++ "/skip.xml?mix_id=" ++ mixId));
+        ++ "/skip.xml?mix_id=" ++ mixId
+        ++ "&api_key=" ++ apiKey));
 }
 
-private reportingUrl(mixId, trackId) {
+private reportingUrl(apiKey, mixId, trackId) {
     return require(parseUrl("http://8tracks.com/sets/874076615/report.xml?track_id="
-        ++ trackId ++ "&mix_id=" ++ mixId));
+        ++ trackId ++ "&mix_id=" ++ mixId
+        ++ "&api_key=" ++ apiKey));
 }
 
 enum SortMethod ( recent, hot, popular, random );
@@ -34,8 +39,9 @@ record MixSearchParameters (
 
 overload MixSearchParameters() = MixSearchParameters(SizeT(1), Vector[String](), recent);
 
-mixesUrl(parameters) {
-    var urlString = "http://8tracks.com/mixes.xml?sort=" ++ str(parameters.sortMethod);
+mixesUrl(apiKey, parameters) {
+    var urlString = "http://8tracks.com/mixes.xml?sort=" ++ str(parameters.sortMethod)
+        ++ "&api_key=" ++ apiKey;
     if (parameters.page > 1) {
         urlString ++: ("&page=" ++ str(parameters.page));
     }
@@ -166,9 +172,9 @@ private parseMixes(string) {
     return move(mixes);
 }
 
-getMixes(parameters) {
+getMixes(apiKey, parameters) {
     var req = GetRequest();
-    var sock = sendRequest(req, mixesUrl(parameters));
+    var sock = sendRequest(req, mixesUrl(apiKey, parameters));
     var resp = parseResponse(sock, req);
     //println(resp.body);
     return move(parseMixes(resp.body));
@@ -205,9 +211,9 @@ private parsePlaytoken(string) {
         :: () -> { error("No playtoken in response"); return String(); };
 }
 
-getPlaytoken() {
+getPlaytoken(apiKey) {
     var req = GetRequest();
-    var sock = sendRequest(req, playtokenUrl);
+    var sock = sendRequest(req, getPlaytokenUrl(apiKey));
     var resp = parseResponse(sock, req);
     return move(parsePlaytoken(resp.body));
 }
@@ -283,36 +289,36 @@ private parseTrack(string) {
     return move(Maybe(track));
 }
 
-getTrack(playtoken, mix) {
+getTrack(apiKey, playtoken, mix) {
     var req = GetRequest();
-    var url = playUrl(playtoken, mix.id);
+    var url = playUrl(apiKey, playtoken, mix.id);
     printlnTo(stderr, url.path);
     var sock = sendRequest(req, url);
     var resp = parseResponse(sock, req);
     return move(parseTrack(resp.body));
 }
 
-getNextTrack(playtoken, mix) {
+getNextTrack(apiKey, playtoken, mix) {
     var req = GetRequest();
-    var url = nextUrl(playtoken, mix.id);
+    var url = nextUrl(apiKey, playtoken, mix.id);
     printlnTo(stderr, url.path);
     var sock = sendRequest(req, url);
     var resp = parseResponse(sock, req);
     return move(parseTrack(resp.body));
 }
 
-reportTrack(mix, track) {
+reportTrack(apiKey, mix, track) {
     var req = GetRequest();
-    var url = reportingUrl(mix.id, track.id);
+    var url = reportingUrl(apiKey, mix.id, track.id);
     printlnTo(stderr, url.path);
     var sock = sendRequest(req, url);
     var resp = parseResponse(sock, req);
     // TODO check response
 }
 
-skipTrack(playtoken, mix) {
+skipTrack(apiKey, playtoken, mix) {
     var req = GetRequest();
-    var url = skipUrl(playtoken, mix.id);
+    var url = skipUrl(apiKey, playtoken, mix.id);
     printlnTo(stderr, url.path);
     var sock = sendRequest(req, url);
     var resp = parseResponse(sock, req);
