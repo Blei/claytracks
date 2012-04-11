@@ -1,6 +1,9 @@
-import maybe.*;
+import algorithms.(beginsWith?, join, split);
+import algorithms.strings.(trim);
 import http.*;
 import libxml.*;
+import maybe.*;
+import printer.(error, printlnTo, str);
 
 private getPlaytokenUrl(apiKey) =
     require(parseUrl("http://8tracks.com/sets/new.xml?api_key=" ++ apiKey));

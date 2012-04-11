@@ -1,4 +1,5 @@
 import unix.*;
+import printer.(printTo, printReprTo);
 
 record OSErrorWithInfo (
     code: Int,
