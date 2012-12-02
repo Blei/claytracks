@@ -225,8 +225,12 @@ private getMixImage(mix) {
 
     var error = Pointer[GError](0);
     var image = gdk_pixbuf_new_from_stream(memoryStream, null(GCancellable), @error);
+
+    g_object_unref(memoryStream);
+
     if (not null?(error)) {
         println("error creating pixbuf ", String(error^.message));
+        g_error_free(error);
         return null(GdkPixbuf);
     } else {
         return image;
@@ -290,6 +294,7 @@ private setCurrentMixes(mixes) {
     var images = getMixImages(currentMixList);
     for (i in range(size(currentMixList))) {
         addMixToContainer(currentMixList[i], images[i], mixListBox);
+        g_object_unref(images[i]);
     }
 
     gtk_widget_show_all(Pointer[GtkWidget](mixListBox));
@@ -405,4 +410,5 @@ main(argc, argv) {
     // cleanup
     gst_element_set_state(playbin, GST_STATE_NULL);
     gst_object_unref(gpointer(playbin));
+    gst_deinit();
 }
