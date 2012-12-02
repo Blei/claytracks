@@ -3,5 +3,7 @@
 a.out
 test
 test.d
+claytracks
+claytracks.d
 *.o
 api-key.txt
