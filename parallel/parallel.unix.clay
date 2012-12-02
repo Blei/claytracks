@@ -1,5 +1,17 @@
-import unix.*;
-import unix.utility.*;
+import data.vectors.(Vector);
+import lambdas.(Function);
+import unix.(
+    free,
+    pthread_attr_destroy,
+    pthread_attr_init,
+    pthread_attr_t,
+    pthread_create,
+    pthread_join,
+    pthread_t,
+    sysconf,
+    _SC_NPROCESSORS_ONLN);
+
+import unix.utility.(ensureSyscall);
 
 private getNumberOfCpus() {
     return SizeT(sysconf(_SC_NPROCESSORS_ONLN));
@@ -27,7 +39,9 @@ private parallelEachNumberCallback(data: RawPointer) : RawPointer {
     return RawPointer(0);
 }
 
-parallelEachNumber(numCalls: SizeT, callback) {
+define parallelEachNumber;
+
+overload parallelEachNumber(numCalls: SizeT, callback) {
     var numCpus = getNumberOfCpus();
     parallelEachNumber(numCalls, numCpus, callback);
 }
@@ -64,12 +78,14 @@ overload parallelEachNumber(numCalls: SizeT, nThreads: SizeT, callback) {
     assert(info.index == info.end);
 }
 
+define parallelMap;
+
 [S1, S2, C]
-inline parallelMap(inseq: S1, outseq: S2, numThreads: SizeT, callback: C) {
+inline overload parallelMap(inseq: S1, outseq: S2, numThreads: SizeT, callback: C) {
     assert(size(inseq) == size(outseq));
-    parallelEachNumber(size(inseq), numThreads) : (i) -> {
+    parallelEachNumber(size(inseq), numThreads, i -> {
         outseq[i] = callback(inseq[i]);
-    }
+    });
 }
 
 [S1, S2, C]
@@ -78,8 +94,10 @@ inline overload parallelMap(inseq: S1, outseq: S2, callback: C) {
     parallelMap(inseq, outseq, numCpus, callback);
 }
 
+define parallelMapHere;
+
 [S, C]
-inline parallelMapHere(seq: S, numThreads: SizeT, callback: C) {
+inline overload parallelMapHere(seq: S, numThreads: SizeT, callback: C) {
     parallelMap(seq, seq, numThreads, callback);
 }
 

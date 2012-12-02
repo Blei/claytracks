@@ -1,5 +1,10 @@
-import unix.*;
-import printer.(printTo, printReprTo);
+import data.strings.(String);
+import printer.(
+    printTo,
+    printReprTo);
+import unix.(
+    errno,
+    printErrorMessageTo);
 
 record OSErrorWithInfo (
     code: Int,
@@ -8,7 +13,9 @@ record OSErrorWithInfo (
 
 instance Exception (OSErrorWithInfo);
 
-alias ensureSyscall(returnCode: Int) {
+define ensureSyscall;
+
+alias overload ensureSyscall(returnCode: Int) {
     if (returnCode != 0) {
         var code = errno();
         var buf = String();

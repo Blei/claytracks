@@ -1,9 +1,13 @@
-import algorithms.(beginsWith?, join, split);
-import algorithms.strings.(trim);
+import data.algorithms.(beginsWith?, join, split);
+import data.algorithms.strings.(trim);
+import data.strings.(String);
+import data.vectors.(Vector);
+import io.files.(stderr);
+import numbers.parser.(parse);
+import printer.(error, printlnTo, str);
+
 import http.*;
 import libxml.*;
-import maybe.*;
-import printer.(error, printlnTo, str);
 
 private getPlaytokenUrl(apiKey) =
     require(parseUrl("http://8tracks.com/sets/new.xml?api_key=" ++ apiKey));
@@ -116,7 +120,7 @@ private parseMix(doc, mixNode, mixes) {
         } else if (name == "id") {
             mix.id = nodeListGetString(doc, node^.children);
         } else if (name == "plays-count") {
-            mix.playsCount = Int(nodeListGetString(doc, node^.children));
+            mix.playsCount = parse(Int, nodeListGetString(doc, node^.children));
         } else if (name == "cover-urls") {
             parseCoverUrls(doc, node, mix);
         } else if (name == "user") {
@@ -206,12 +210,14 @@ private parsePlaytoken(string) {
         error("Incorrect playtoken xml document");
     }
 
-    var maybePlaytokenNode = maybeFindIf(XmlNodePtrSequence(cur^.children)): node ->
-        xmlStrcmp(node^.name, xmlString("play-token")) == 0;
+    var maybePlaytokenNode = maybeFindIf(XmlNodePtrSequence(cur^.children), node ->
+        xmlStrcmp(node^.name, xmlString("play-token")) == 0
+    );
 
-    return maybe(maybePlaytokenNode)
-        : node -> nodeListGetString(doc, node^.children)
-        :: () -> { error("No playtoken in response"); return String(); };
+    return maybe(maybePlaytokenNode,
+        node -> nodeListGetString(doc, node^.children),
+        -> { error("No playtoken in response"); return String(); }
+    );
 }
 
 getPlaytoken(apiKey) {

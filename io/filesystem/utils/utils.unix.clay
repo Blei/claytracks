@@ -1,8 +1,6 @@
 import libc;
 import unix;
 
-import unix.utility.*;
-
 private alias MKDIR_MODE = unix.mode_t(octal(#"0775"));
 
 [S when String?(S)]
@@ -21,13 +19,13 @@ enum StatResult (
 fileType(name: S) {
     var buf = unix.Struct_stat();
     var noFile? = false;
-    ensureSyscall(unix.stat(cstring(name), &buf)) : err -> {
+    ensureSyscall(unix.stat(cstring(name), &buf), err -> {
         if (err.code == unix.ENOENT) {
             noFile? = true;
         } else {
             throw err;
         }
-    }
+    });
     if (noFile?) {
         return STAT_NOTHING;
     }

@@ -1,15 +1,25 @@
-import algorithms.(join);
-import algorithms.strings.(trim);
-import http.*;
-import maybe.*;
+import data.algorithms.(join);
+import data.algorithms.strings.(trim);
+import data.strings.(String);
+import data.vectors.(Vector);
+import http.(
+    GetRequest,
+    parseResponse,
+    parseUrl,
+    sendRequest);
+import io.files.(
+    File,
+    READ,
+    stderr);
+import io.streams.(readLine);
+import printer.(printlnTo, println);
+
 import gstreamer.*;
 import glib.*;
 import gio.*;
 import gobject.*;
 import gtk.*;
 import gdkpixbuf.*;
-import io.paths.*;
-import printer.(printlnTo, println);
 
 import api.*;
 import parallel.*;
@@ -171,7 +181,7 @@ private registerSongReporter() {
 
 private changeTrack(maybeTrack) {
     currentTrack = maybeTrack;
-    maybe(maybeTrack) : track -> {
+    maybe(maybeTrack, track -> {
         // Stop left-over song reporter
         if (songReporterRegistered? and not songReported?) {
             gst_clock_id_unschedule(require(currentClockId));
@@ -189,12 +199,12 @@ private changeTrack(maybeTrack) {
         songReporterRegistered? = false;
         songReported? = false;
         setControlButtonsSensitive(true);
-    } :: () -> {
+    }, -> {
         println("No current track (end of playlist?)");
         gtk_label_set_text(currentTrackLabel, nothingPlayingText);
         currentlyPlaying? = false;
         setControlButtonsSensitive(false);
-    }
+    });
 }
 
 private togglePlaying() {
@@ -226,7 +236,7 @@ private getMixImage(mix) {
 private getMixImages(mixes) {
     var images = Vector[Pointer[GdkPixbuf]]();
     resize(images, size(mixes));
-    parallelMap(mixes, images) : mix -> getMixImage(mix);
+    parallelMap(mixes, images, mix -> getMixImage(mix));
     return move(images);
 }
 
