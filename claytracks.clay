@@ -345,35 +345,18 @@ main(argc, argv) {
     gSignalConnect(window, cstring("destroy"),
         GCallback(destroying), gpointer(0));
 
-    var windowBox = gtk_vbox_new(FALSE, 5);
-    gtk_container_add(Pointer[GtkContainer](window), Pointer[GtkWidget](windowBox));
+    var notebook = Pointer[GtkNotebook](gtk_notebook_new());
+    gtk_container_add(Pointer[GtkContainer](window), Pointer[GtkWidget](notebook));
 
-    var controlButtonBox = gtk_hbutton_box_new();
-    gtk_box_pack_start(Pointer[GtkBox](windowBox), Pointer[GtkWidget](controlButtonBox),
-        FALSE, FALSE, 0u);
-    gtk_button_box_set_layout(Pointer[GtkButtonBox](controlButtonBox), GTK_BUTTONBOX_CENTER);
-
-    playPauseButton = Pointer[GtkButton](gtk_button_new_with_label(pauseButtonText));
-    gtk_container_add(Pointer[GtkContainer](controlButtonBox), Pointer[GtkWidget](playPauseButton));
-    gSignalConnect(playPauseButton, cstring("clicked"),
-        GCallback(clickedPlayPause), gpointer(0));
-
-    skipButton = Pointer[GtkButton](gtk_button_new_with_label(cstring("Skip")));
-    gtk_container_add(Pointer[GtkContainer](controlButtonBox), Pointer[GtkWidget](skipButton));
-    gSignalConnect(skipButton, cstring("clicked"),
-        GCallback(clickedSkip), gpointer(0));
-
-    setControlButtonsSensitive(false);
-
-    // whu? that's definitely a label
-    currentTrackLabel = Pointer[GtkLabel](gtk_label_new(nothingPlayingText));
-    gtk_box_pack_start(Pointer[GtkBox](windowBox), Pointer[GtkWidget](currentTrackLabel),
-        FALSE, FALSE, 0u);
+    // List page
+    var listBox = gtk_vbox_new(FALSE, 5);
+    var listLabel = gtk_label_new(cstring("List"));
+    gtk_notebook_append_page(notebook, Pointer[GtkWidget](listBox), listLabel);
 
     scrolledWindow = Pointer[GtkScrolledWindow](
         gtk_scrolled_window_new(null(GtkAdjustment), null(GtkAdjustment)));
     gtk_scrolled_window_set_policy(scrolledWindow, GTK_POLICY_NEVER, GTK_POLICY_AUTOMATIC);
-    gtk_box_pack_start_defaults(Pointer[GtkBox](windowBox), Pointer[GtkWidget](scrolledWindow));
+    gtk_box_pack_start_defaults(Pointer[GtkBox](listBox), Pointer[GtkWidget](scrolledWindow));
 
     mixListBox = Pointer[GtkBox](gtk_vbox_new(FALSE, 5));
     gtk_scrolled_window_add_with_viewport(
@@ -382,7 +365,7 @@ main(argc, argv) {
     setCurrentMixes(getMixes(apiKey, mixSearchParameters));
 
     var pageBox = gtk_hbox_new(FALSE, 10);
-    gtk_box_pack_start(Pointer[GtkBox](windowBox), Pointer[GtkWidget](pageBox),
+    gtk_box_pack_start(Pointer[GtkBox](listBox), Pointer[GtkWidget](pageBox),
         FALSE, FALSE, 0u);
 
     var previousPageButton = gtk_button_new_with_label(cstring("Previous Page"));
@@ -402,6 +385,32 @@ main(argc, argv) {
         FALSE, FALSE, 0u);
     gSignalConnect(nextPageButton, cstring("clicked"),
         GCallback(clickedNextPage), gpointer(0));
+
+    // Player control page
+    var playBox = gtk_vbox_new(FALSE, 5);
+    var playLabel = gtk_label_new(cstring("Playing"));
+    gtk_notebook_append_page(notebook, Pointer[GtkWidget](playBox), playLabel);
+
+    var controlButtonBox = gtk_hbutton_box_new();
+    gtk_button_box_set_layout(Pointer[GtkButtonBox](controlButtonBox), GTK_BUTTONBOX_CENTER);
+    gtk_box_pack_start(Pointer[GtkBox](playBox), Pointer[GtkWidget](controlButtonBox),
+        FALSE, FALSE, 0u);
+
+    playPauseButton = Pointer[GtkButton](gtk_button_new_with_label(pauseButtonText));
+    gtk_container_add(Pointer[GtkContainer](controlButtonBox), Pointer[GtkWidget](playPauseButton));
+    gSignalConnect(playPauseButton, cstring("clicked"),
+        GCallback(clickedPlayPause), gpointer(0));
+
+    skipButton = Pointer[GtkButton](gtk_button_new_with_label(cstring("Skip")));
+    gtk_container_add(Pointer[GtkContainer](controlButtonBox), Pointer[GtkWidget](skipButton));
+    gSignalConnect(skipButton, cstring("clicked"),
+        GCallback(clickedSkip), gpointer(0));
+
+    setControlButtonsSensitive(false);
+
+    currentTrackLabel = Pointer[GtkLabel](gtk_label_new(nothingPlayingText));
+    gtk_box_pack_start(Pointer[GtkBox](playBox), Pointer[GtkWidget](currentTrackLabel),
+        FALSE, FALSE, 0u);
 
     gtk_widget_show_all(Pointer[GtkWidget](window));
 
