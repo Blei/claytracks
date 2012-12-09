@@ -69,7 +69,8 @@ record Mix (
     description: String,
     id: String,
     originalCoverUrl: String,
-    sq133CoverUrl: String
+    sq133CoverUrl: String,
+    sq250CoverUrl: String,
 );
 
 record Track (
@@ -82,7 +83,7 @@ record Track (
 
 // hack for relative urls
 private fixCoverUrls(mix) {
-    ..for (field in "originalCoverUrl", "sq133CoverUrl") {
+    ..for (field in "originalCoverUrl", "sq133CoverUrl", "sq250CoverUrl") {
         var str = fieldRef(mix, field);
         if (not beginsWith?(str, "http://")) {
             fieldRef(mix, field) = "http://8tracks.com" ++ str;
@@ -101,6 +102,8 @@ private parseCoverUrls(doc, coverUrlsNode, mix) {
             mix.originalCoverUrl = nodeListGetString(doc, node^.children);
         } else if (name == "sq133") {
             mix.sq133CoverUrl = nodeListGetString(doc, node^.children);
+        } else if (name == "sq250") {
+            mix.sq250CoverUrl = nodeListGetString(doc, node^.children);
         }
     }
 }

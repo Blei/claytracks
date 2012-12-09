@@ -31,6 +31,9 @@ private var pauseButtonText = cstring("Pause");
 
 private var apiKeyFile = "api-key.txt";
 
+private alias LIST_PAGE = 0;
+private alias PLAY_PAGE = 1;
+
 record ListUI (
     // The `Player` pointer is used in some callbacks
     currentMixList: Vector[Tuple[Pointer[Player], api.Mix]],
@@ -43,6 +46,8 @@ record PlayUI (
 
     playPauseButton: Pointer[GtkButton],
     skipButton: Pointer[GtkButton],
+
+    imageWidget: Pointer[GtkImage],
 );
 
 record Player (
@@ -61,6 +66,7 @@ record Player (
 
     playbin: Pointer[GstElement],
 
+    notebook: Pointer[GtkNotebook],
     listUI: ListUI,
     playUI: PlayUI,
 );
@@ -103,6 +109,17 @@ private playMix(player: Player, mix: api.Mix) {
     player.currentMix = Maybe(mix);
     var maybeTrack = api.getTrack(player.apiKey, player.playtoken, mix);
     changeTrack(player, maybeTrack);
+
+    gtk_notebook_set_current_page(player.notebook, PLAY_PAGE);
+
+    var image = getImageFromUrlString(mix.sq250CoverUrl);
+    if (null?(image)) {
+        gtk_image_set_from_stock(player.playUI.imageWidget,
+            cstring("gtk-missing-image"), GTK_ICON_SIZE_DIALOG);
+    } else {
+        gtk_image_set_from_pixbuf(player.playUI.imageWidget, image);
+        g_object_unref(image);
+    }
 }
 
 private skipTrack(player: Player) {
@@ -275,7 +292,11 @@ private togglePlaying(player) {
 }
 
 private getMixImage(mix) {
-    var url = require(parseUrl(mix.sq133CoverUrl));
+    return move(getImageFromUrlString(mix.sq133CoverUrl));
+}
+
+private getImageFromUrlString(urlString) {
+    var url = require(parseUrl(urlString));
     var req = GetRequest();
     var sock = sendRequest(req, url);
     var resp = parseResponse(sock, req);
@@ -334,11 +355,11 @@ private addMixToContainer(ref mixTuple, image, container) {
         gtk_label_set_line_wrap(Pointer[GtkLabel](label), TRUE);
     }
 
-    if (not null?(image)) {
-        var imageWidget = gtk_image_new_from_pixbuf(image);
-        gtk_box_pack_end(Pointer[GtkBox](hbox), Pointer[GtkWidget](imageWidget),
-            FALSE, FALSE, UInt32(0));
-    }
+    var imageWidget =
+        if (null?(image)) gtk_image_new_from_stock(cstring("gtk-missing-image"), GTK_ICON_SIZE_DIALOG)
+        else gtk_image_new_from_pixbuf(image);
+    gtk_box_pack_end(Pointer[GtkBox](hbox), Pointer[GtkWidget](imageWidget),
+        FALSE, FALSE, UInt32(0));
 
     var button = gtk_button_new_with_label(playButtonText);
     gtk_box_pack_end(Pointer[GtkBox](hbox), Pointer[GtkWidget](button),
@@ -389,13 +410,13 @@ private runApplication() {
     gSignalConnect(window, cstring("destroy"),
         GCallback(destroying), gpointer(0));
 
-    var notebook = Pointer[GtkNotebook](gtk_notebook_new());
-    gtk_container_add(Pointer[GtkContainer](window), Pointer[GtkWidget](notebook));
+    player.notebook = Pointer[GtkNotebook](gtk_notebook_new());
+    gtk_container_add(Pointer[GtkContainer](window), Pointer[GtkWidget](player.notebook));
 
     // List page
     var listBox = gtk_vbox_new(FALSE, 5);
     var listLabel = gtk_label_new(cstring("List"));
-    gtk_notebook_append_page(notebook, Pointer[GtkWidget](listBox), listLabel);
+    gtk_notebook_append_page(player.notebook, Pointer[GtkWidget](listBox), listLabel);
 
     player.listUI.scrolledWindow = Pointer[GtkScrolledWindow](
         gtk_scrolled_window_new(null(GtkAdjustment), null(GtkAdjustment)));
@@ -434,7 +455,12 @@ private runApplication() {
     // Player control page
     var playBox = gtk_vbox_new(FALSE, 5);
     var playLabel = gtk_label_new(cstring("Playing"));
-    gtk_notebook_append_page(notebook, Pointer[GtkWidget](playBox), playLabel);
+    gtk_notebook_append_page(player.notebook, Pointer[GtkWidget](playBox), playLabel);
+
+    player.playUI.imageWidget = Pointer[GtkImage](gtk_image_new_from_stock(
+        cstring("gtk-missing-image"), GTK_ICON_SIZE_DIALOG));
+    gtk_box_pack_start(Pointer[GtkBox](playBox), Pointer[GtkWidget](player.playUI.imageWidget),
+        FALSE, FALSE, 0u);
 
     var controlButtonBox = gtk_hbutton_box_new();
     gtk_button_box_set_layout(Pointer[GtkButtonBox](controlButtonBox), GTK_BUTTONBOX_CENTER);
