@@ -30,6 +30,7 @@ private var playButtonText = cstring("Play");
 private var pauseButtonText = cstring("Pause");
 
 private var apiKeyFile = "api-key.txt";
+private var iconFile = "8tracks-icon.jpg";
 
 private alias LIST_PAGE = 0;
 private alias PLAY_PAGE = 1;
@@ -409,6 +410,13 @@ private runApplication() {
     gtk_window_set_default_size(Pointer[GtkWindow](window), 500, 600);
     gSignalConnect(window, cstring("destroy"),
         GCallback(destroying), gpointer(0));
+
+    var errorPtr = null(GError);
+    gtk_window_set_default_icon_from_file(cstring(iconFile), @errorPtr);
+    if (not null?(errorPtr)) {
+        println("Error loading icon from file '", iconFile ,"', error was: ",
+            errorPtr^.message);
+    }
 
     player.notebook = Pointer[GtkNotebook](gtk_notebook_new());
     gtk_container_add(Pointer[GtkContainer](window), Pointer[GtkWidget](player.notebook));
