@@ -21,7 +21,7 @@ import gobject.*;
 import gtk.*;
 import gdkpixbuf.*;
 
-import api.*;
+import api;
 import parallel.*;
 import io.filesystem.utils.*;
 
@@ -29,33 +29,93 @@ private var nothingPlayingText = cstring("Nothing playing currently");
 private var playButtonText = cstring("Play");
 private var pauseButtonText = cstring("Pause");
 
-private var playbin = Pointer[GstElement](0);
-private var playtoken = String();
-
 private var apiKeyFile = "api-key.txt";
-private var apiKey = String();
 
-private var currentTrack = nothing(Track);
-private var currentMix = nothing(Mix);
+record ListUI (
+    // The `Player` pointer is used in some callbacks
+    currentMixList: Vector[Tuple[Pointer[Player], api.Mix]],
+    mixListBox: Pointer[GtkBox],
+    scrolledWindow: Pointer[GtkScrolledWindow],
+);
 
-private var currentTrackLabel = null(GtkLabel);
-private var currentlyPlaying? = false;
+record PlayUI (
+    currentTrackLabel: Pointer[GtkLabel],
 
-private var currentClockId = nothing(GstClockID);
-private var songReporterRegistered? = false;
-private var songReported? = false;
+    playPauseButton: Pointer[GtkButton],
+    skipButton: Pointer[GtkButton],
+);
 
-private var playPauseButton = null(GtkButton);
-private var skipButton = null(GtkButton);
+record Player (
+    apiKey: String,
+    playtoken: String,
 
-private var currentMixList = Vector[Mix]();
-private var mixListBox = null(GtkBox);
+    currentTrack: Maybe[api.Track],
+    currentMix: Maybe[api.Mix],
+    currentlyPlaying?: Bool,
 
-private var scrolledWindow = null(GtkScrolledWindow);
+    mixSearchParameters: api.MixSearchParameters,
 
-private var mixSearchParameters = MixSearchParameters();
+    currentClockId: Maybe[GstClockID],
+    songReporterRegistered?: Bool,
+    songReported?: Bool,
+
+    playbin: Pointer[GstElement],
+
+    listUI: ListUI,
+    playUI: PlayUI,
+);
+
+overload destroy(this: Player) {
+    maybe(this.currentClockId, id -> {
+        gst_clock_id_unschedule(id);
+        this.currentClockId = nothing(GstClockID);
+    });
+
+    gst_element_set_state(this.playbin, GST_STATE_NULL);
+    gst_object_unref(gpointer(this.playbin));
+    this.playbin = null(GstElement);
+}
+
+private initPlayer(ref player) {
+    player.playbin = gst_element_factory_make(cstring("playbin2"), cstring("play"));
+
+    var bus = gst_element_get_bus(player.playbin);
+    gst_bus_add_watch(bus, GstBusFunc(watchBus), gpointer(@player));
+    gst_object_unref(gpointer(bus));
+
+    player.apiKey = readApiKey(apiKeyFile);
+    player.playtoken = api.getPlaytoken(player.apiKey);
+}
+
+private readApiKey(file) {
+    var f = File(file, READ);
+    var s = readLine(f);
+    return move(trim(s));
+}
+
+private nextTrack(player: Player) {
+    var mix = require(player.currentMix);
+    var maybeTrack = api.getNextTrack(player.apiKey, player.playtoken, mix);
+    changeTrack(player, maybeTrack);
+}
+
+private playMix(player: Player, mix: api.Mix) {
+    player.currentMix = Maybe(mix);
+    var maybeTrack = api.getTrack(player.apiKey, player.playtoken, mix);
+    changeTrack(player, maybeTrack);
+}
+
+private skipTrack(player: Player) {
+    var mix = require(player.currentMix);
+    // TODO is skipping allowed?
+    var maybeTrack = api.skipTrack(player.apiKey, player.playtoken, mix);
+    // TODO show indication if skipping fails
+    changeTrack(player, maybeTrack);
+}
 
 private external watchBus(bus: Pointer[GstBus], message: Pointer[GstMessage], data: gpointer) : gboolean {
+
+    ref player = Pointer[Player](data)^;
 
     var msgType = message^.type;
 
@@ -69,8 +129,8 @@ private external watchBus(bus: Pointer[GstBus], message: Pointer[GstMessage], da
         //var newStateName = gst_element_state_get_name(newState);
         //println("Changed state to ", CStringRef(newStateName));
 
-        if (newState == GST_STATE_PLAYING and not songReporterRegistered?) {
-            registerSongReporter();
+        if (newState == GST_STATE_PLAYING and not player.songReporterRegistered?) {
+            registerSongReporter(player);
         }
     }
     case (GST_MESSAGE_ERROR) {
@@ -81,12 +141,10 @@ private external watchBus(bus: Pointer[GstBus], message: Pointer[GstMessage], da
         println("debug info: ", String(debugInfo));
         g_error_free(err);
         g_free(gpointer(debugInfo));
-        currentlyPlaying? = false;
+        player.currentlyPlaying? = false;
     }
     case (GST_MESSAGE_EOS) {
-        var mix = require(currentMix);
-        var maybeTrack = getNextTrack(apiKey, playtoken, mix);
-        changeTrack(maybeTrack);
+        nextTrack(player);
     }
     else {
         //println(String(gst_message_type_get_name(msgType)));
@@ -100,28 +158,24 @@ private external destroying(widget: Pointer[GtkWidget], data: gpointer) {
 }
 
 private external clickedPlay(button: Pointer[GtkButton], data: gpointer) {
-    var mix = Pointer[Mix](data);
-    currentMix = Maybe(mix^);
-    var maybeTrack = getTrack(apiKey, playtoken, mix^);
-    changeTrack(maybeTrack);
+    ref mixTuple = Pointer[Tuple[Pointer[Player], api.Mix]](data)^;
+    playMix(mixTuple.0^, mixTuple.1);
 }
 
 private external clickedPlayPause(button: Pointer[GtkButton], data: gpointer) {
-    togglePlaying();
+    ref player = Pointer[Player](data)^;
+    togglePlaying(player);
 }
 
 private external clickedSkip(button: Pointer[GtkButton], data: gpointer) {
-    if (currentlyPlaying?) {
+    ref player = Pointer[Player](data)^;
+    if (player.currentlyPlaying?) {
         // Pause current track
-        gst_element_set_state(playbin, GST_STATE_PAUSED);
-        currentlyPlaying? = false;
+        gst_element_set_state(player.playbin, GST_STATE_PAUSED);
+        player.currentlyPlaying? = false;
     }
 
-    var mix = require(currentMix);
-    // TODO is skipping allowed?
-    var maybeTrack = skipTrack(apiKey, playtoken, mix);
-    // TODO show indication if skipping fails
-    changeTrack(maybeTrack);
+    skipTrack(player);
 }
 
 private external destroyWidget(widget: Pointer[GtkWidget], data: gpointer) {
@@ -129,88 +183,95 @@ private external destroyWidget(widget: Pointer[GtkWidget], data: gpointer) {
 }
 
 private external clickedReload(button: Pointer[GtkButton], data: gpointer) {
-    setCurrentMixes(getMixes(apiKey, mixSearchParameters));
+    ref player = Pointer[Player](data)^;
+    setCurrentMixes(player, api.getMixes(player.apiKey, player.mixSearchParameters));
 }
 
 private external clickedPreviousPage(button: Pointer[GtkButton], data: gpointer) {
-    if (mixSearchParameters.page > 1) {
-        mixSearchParameters.page -: 1;
-        setCurrentMixes(getMixes(apiKey, mixSearchParameters));
-        scrollUp();
+    ref player = Pointer[Player](data)^;
+    if (player.mixSearchParameters.page > 1) {
+        player.mixSearchParameters.page -: 1;
+        setCurrentMixes(player, api.getMixes(player.apiKey, player.mixSearchParameters));
+        scrollUp(player.listUI.scrolledWindow);
     }
 }
 
 private external clickedNextPage(button: Pointer[GtkButton], data: gpointer) {
-    mixSearchParameters.page +: 1;
-    setCurrentMixes(getMixes(apiKey, mixSearchParameters));
-    scrollUp();
+    ref player = Pointer[Player](data)^;
+    player.mixSearchParameters.page +: 1;
+    setCurrentMixes(player, api.getMixes(player.apiKey, player.mixSearchParameters));
+    scrollUp(player.listUI.scrolledWindow);
 }
 
 private external registerPlayingSong(clock: Pointer[GstClock], time: GstClockTime,
         id: GstClockID, data: gpointer) : gboolean {
 
+    ref player = Pointer[Player](data)^;
+
     println("Reporting track");
-    reportTrack(apiKey, require(currentMix), require(currentTrack));
-    songReported? = true;
+    api.reportTrack(player.apiKey, require(player.currentMix), require(player.currentTrack));
+    player.songReported? = true;
 
     gst_clock_id_unref(id);
-    currentClockId = nothing(GstClockID);
+    player.currentClockId = nothing(GstClockID);
 
     // return value is ignored, according to docs
     return TRUE;
 }
 
-private registerSongReporter() {
-    var clock = gst_element_get_clock(playbin);
+private registerSongReporter(ref player: Player) {
+    var clock = gst_element_get_clock(player.playbin);
     if (null?(clock)) {
         printlnTo(stderr, "clock is null");
         return;
     }
     println("Registering Song Reporter");
-    var baseTime = gst_element_get_base_time(playbin);
+    var baseTime = gst_element_get_base_time(player.playbin);
     var clockId = gst_clock_new_single_shot_id(clock, baseTime + GST_SECOND * 30);
-    gst_clock_id_wait_async(clockId, GstClockCallback(registerPlayingSong), gpointer(0));
+    gst_clock_id_wait_async(clockId, GstClockCallback(registerPlayingSong), gpointer(@player));
 
-    currentClockId = Maybe(clockId);
+    player.currentClockId = Maybe(clockId);
 
     g_object_unref(gpointer(clock));
 
-    songReporterRegistered? = true;
-    songReported? = false;
+    player.songReporterRegistered? = true;
+    player.songReported? = false;
 }
 
-private changeTrack(maybeTrack) {
-    currentTrack = maybeTrack;
+private changeTrack(player, maybeTrack) {
+    player.currentTrack = maybeTrack;
     maybe(maybeTrack, track -> {
         // Stop left-over song reporter
-        if (songReporterRegistered? and not songReported?) {
-            gst_clock_id_unschedule(require(currentClockId));
-            currentClockId = nothing(GstClockID);
+        if (player.songReporterRegistered? and not player.songReported?) {
+            gst_clock_id_unschedule(require(player.currentClockId));
+            player.currentClockId = nothing(GstClockID);
         }
 
         println("Current track: ", track);
-        gtk_label_set_text(currentTrackLabel,
+        gtk_label_set_text(player.playUI.currentTrackLabel,
             cstring("'" ++ track.name ++ "' by " ++ track.performer));
 
-        gst_element_set_state(playbin, GST_STATE_NULL);
-        g_object_set(gpointer(playbin), cstring("uri"), cstring(track.url), 0);
-        gst_element_set_state(playbin, GST_STATE_PLAYING);
-        currentlyPlaying? = true;
-        songReporterRegistered? = false;
-        songReported? = false;
-        setControlButtonsSensitive(true);
+        gst_element_set_state(player.playbin, GST_STATE_NULL);
+        g_object_set(gpointer(player.playbin), cstring("uri"), cstring(track.url), 0);
+        gst_element_set_state(player.playbin, GST_STATE_PLAYING);
+        player.currentlyPlaying? = true;
+        player.songReporterRegistered? = false;
+        player.songReported? = false;
+        setControlButtonsSensitive(player, true);
     }, -> {
         println("No current track (end of playlist?)");
-        gtk_label_set_text(currentTrackLabel, nothingPlayingText);
-        currentlyPlaying? = false;
-        setControlButtonsSensitive(false);
+        gtk_label_set_text(player.playUI.currentTrackLabel, nothingPlayingText);
+        player.currentlyPlaying? = false;
+        setControlButtonsSensitive(player, false);
     });
 }
 
-private togglePlaying() {
-    gst_element_set_state(playbin, if (currentlyPlaying?) GST_STATE_PAUSED else GST_STATE_PLAYING);
-    gtk_button_set_label(playPauseButton, if (currentlyPlaying?) pauseButtonText else playButtonText);
-    currentlyPlaying? = not currentlyPlaying?;
+private togglePlaying(player) {
+    player.currentlyPlaying? = not player.currentlyPlaying?;
+    gst_element_set_state(player.playbin,
+        if (player.currentlyPlaying?) GST_STATE_PLAYING else GST_STATE_PAUSED);
+    gtk_button_set_label(player.playUI.playPauseButton,
+        if (player.currentlyPlaying?) pauseButtonText else playButtonText);
 }
 
 private getMixImage(mix) {
@@ -244,7 +305,9 @@ private getMixImages(mixes) {
     return move(images);
 }
 
-private addMixToContainer(mix, image, container) {
+private addMixToContainer(ref mixTuple, image, container) {
+    ref mix = mixTuple.1;
+
     var hbox = gtk_hbox_new(FALSE, 5);
     gtk_container_add(Pointer[GtkContainer](container), Pointer[GtkWidget](hbox));
 
@@ -282,62 +345,43 @@ private addMixToContainer(mix, image, container) {
         FALSE, FALSE, UInt32(0));
 
     gSignalConnect(button, cstring("clicked"),
-        GCallback(clickedPlay), gpointer(@mix));
+        GCallback(clickedPlay), gpointer(@mixTuple));
 }
 
-private setCurrentMixes(mixes) {
+private setCurrentMixes(ref player, mixes) {
     // Remove old mixes
-    gtk_container_foreach(Pointer[GtkContainer](mixListBox),
+    gtk_container_foreach(Pointer[GtkContainer](player.listUI.mixListBox),
         GtkCallback(destroyWidget), gpointer(0));
 
-    currentMixList = mixes;
-    var images = getMixImages(currentMixList);
-    for (i in range(size(currentMixList))) {
-        addMixToContainer(currentMixList[i], images[i], mixListBox);
+    ref mixList = player.listUI.currentMixList;
+    clear(mixList);
+    var images = getMixImages(mixes);
+
+    for (i in range(size(mixes))) {
+        push(mixList, [@player, mixes[i]]);
+        addMixToContainer(mixList[i], images[i], player.listUI.mixListBox);
         g_object_unref(images[i]);
     }
 
-    gtk_widget_show_all(Pointer[GtkWidget](mixListBox));
+    gtk_widget_show_all(Pointer[GtkWidget](player.listUI.mixListBox));
 }
 
-private setControlButtonsSensitive(sensitive?) {
-    ..for (button in playPauseButton, skipButton) {
+private setControlButtonsSensitive(player, sensitive?) {
+    ..for (button in player.playUI.playPauseButton, player.playUI.skipButton) {
         gtk_widget_set_sensitive(Pointer[GtkWidget](button), if (sensitive?) TRUE else FALSE);
     }
 }
 
-private scrollUp() {
+private scrollUp(scrolledWindow) {
     var adjustment = gtk_scrolled_window_get_vadjustment(scrolledWindow);
     gtk_adjustment_set_value(adjustment, gtk_adjustment_get_lower(adjustment));
     gtk_scrolled_window_set_vadjustment(scrolledWindow, adjustment);
 }
 
-private initGstreamer(argcPointer, argvPointer) {
-    // let's get some sound going on!
-    gst_init(argcPointer, argvPointer);
-
-    playbin = gst_element_factory_make(cstring("playbin2"), cstring("play"));
-
-    var bus = gst_element_get_bus(playbin);
-    gst_bus_add_watch(bus, GstBusFunc(watchBus), gpointer(0));
-    gst_object_unref(gpointer(bus));
-}
-
-private readApiKey() {
-    var f = File(apiKeyFile, READ);
-    var s = readLine(f);
-    apiKey = trim(s);
-}
-
-main(argc, argv) {
-    readApiKey();
-
-    playtoken = getPlaytoken(apiKey);
-
-    initGstreamer(@argc, @argv);
-    
-    // gui ftw
-    gtk_init(@argc, @argv);
+private runApplication() {
+    // Has to be destroyed before GST is uninitialized
+    var player = Player();
+    initPlayer(player);
 
     var window = gtk_window_new(GTK_WINDOW_TOPLEVEL);
     gtk_window_set_title(Pointer[GtkWindow](window), cstring("Cl8tracks"));
@@ -353,16 +397,17 @@ main(argc, argv) {
     var listLabel = gtk_label_new(cstring("List"));
     gtk_notebook_append_page(notebook, Pointer[GtkWidget](listBox), listLabel);
 
-    scrolledWindow = Pointer[GtkScrolledWindow](
+    player.listUI.scrolledWindow = Pointer[GtkScrolledWindow](
         gtk_scrolled_window_new(null(GtkAdjustment), null(GtkAdjustment)));
-    gtk_scrolled_window_set_policy(scrolledWindow, GTK_POLICY_NEVER, GTK_POLICY_AUTOMATIC);
-    gtk_box_pack_start_defaults(Pointer[GtkBox](listBox), Pointer[GtkWidget](scrolledWindow));
+    gtk_scrolled_window_set_policy(player.listUI.scrolledWindow, GTK_POLICY_NEVER, GTK_POLICY_AUTOMATIC);
+    gtk_box_pack_start_defaults(Pointer[GtkBox](listBox), Pointer[GtkWidget](player.listUI.scrolledWindow));
 
-    mixListBox = Pointer[GtkBox](gtk_vbox_new(FALSE, 5));
+    player.listUI.mixListBox = Pointer[GtkBox](gtk_vbox_new(FALSE, 5));
     gtk_scrolled_window_add_with_viewport(
-        Pointer[GtkScrolledWindow](scrolledWindow), Pointer[GtkWidget](mixListBox));
+        Pointer[GtkScrolledWindow](player.listUI.scrolledWindow),
+        Pointer[GtkWidget](player.listUI.mixListBox));
 
-    setCurrentMixes(getMixes(apiKey, mixSearchParameters));
+    setCurrentMixes(player, api.getMixes(player.apiKey, player.mixSearchParameters));
 
     var pageBox = gtk_hbox_new(FALSE, 10);
     gtk_box_pack_start(Pointer[GtkBox](listBox), Pointer[GtkWidget](pageBox),
@@ -372,19 +417,19 @@ main(argc, argv) {
     gtk_box_pack_start(Pointer[GtkBox](pageBox), Pointer[GtkWidget](previousPageButton),
         FALSE, FALSE, 0u);
     gSignalConnect(previousPageButton, cstring("clicked"),
-        GCallback(clickedPreviousPage), gpointer(0));
+        GCallback(clickedPreviousPage), gpointer(@player));
 
     var reloadButton = gtk_button_new_with_label(cstring("Reload List"));
     gtk_box_pack_start(Pointer[GtkBox](pageBox), Pointer[GtkWidget](reloadButton),
         TRUE, FALSE, 0u);
     gSignalConnect(reloadButton, cstring("clicked"),
-        GCallback(clickedReload), gpointer(0));
+        GCallback(clickedReload), gpointer(@player));
 
     var nextPageButton = gtk_button_new_with_label(cstring("Next Page"));
     gtk_box_pack_end(Pointer[GtkBox](pageBox), Pointer[GtkWidget](nextPageButton),
         FALSE, FALSE, 0u);
     gSignalConnect(nextPageButton, cstring("clicked"),
-        GCallback(clickedNextPage), gpointer(0));
+        GCallback(clickedNextPage), gpointer(@player));
 
     // Player control page
     var playBox = gtk_vbox_new(FALSE, 5);
@@ -396,28 +441,36 @@ main(argc, argv) {
     gtk_box_pack_start(Pointer[GtkBox](playBox), Pointer[GtkWidget](controlButtonBox),
         FALSE, FALSE, 0u);
 
-    playPauseButton = Pointer[GtkButton](gtk_button_new_with_label(pauseButtonText));
-    gtk_container_add(Pointer[GtkContainer](controlButtonBox), Pointer[GtkWidget](playPauseButton));
-    gSignalConnect(playPauseButton, cstring("clicked"),
-        GCallback(clickedPlayPause), gpointer(0));
+    player.playUI.playPauseButton = Pointer[GtkButton](gtk_button_new_with_label(pauseButtonText));
+    gtk_container_add(Pointer[GtkContainer](controlButtonBox),
+        Pointer[GtkWidget](player.playUI.playPauseButton));
+    gSignalConnect(player.playUI.playPauseButton, cstring("clicked"),
+        GCallback(clickedPlayPause), gpointer(@player));
 
-    skipButton = Pointer[GtkButton](gtk_button_new_with_label(cstring("Skip")));
-    gtk_container_add(Pointer[GtkContainer](controlButtonBox), Pointer[GtkWidget](skipButton));
-    gSignalConnect(skipButton, cstring("clicked"),
-        GCallback(clickedSkip), gpointer(0));
+    player.playUI.skipButton = Pointer[GtkButton](gtk_button_new_with_label(cstring("Skip")));
+    gtk_container_add(Pointer[GtkContainer](controlButtonBox),
+        Pointer[GtkWidget](player.playUI.skipButton));
+    gSignalConnect(player.playUI.skipButton, cstring("clicked"),
+        GCallback(clickedSkip), gpointer(@player));
 
-    setControlButtonsSensitive(false);
+    setControlButtonsSensitive(player, false);
 
-    currentTrackLabel = Pointer[GtkLabel](gtk_label_new(nothingPlayingText));
-    gtk_box_pack_start(Pointer[GtkBox](playBox), Pointer[GtkWidget](currentTrackLabel),
+    player.playUI.currentTrackLabel = Pointer[GtkLabel](gtk_label_new(nothingPlayingText));
+    gtk_box_pack_start(Pointer[GtkBox](playBox), Pointer[GtkWidget](player.playUI.currentTrackLabel),
         FALSE, FALSE, 0u);
 
     gtk_widget_show_all(Pointer[GtkWidget](window));
 
     gtk_main();
+}
+
+main(argc, argv) {
+    // Fire up the toolkits!
+    gst_init(@argc, @argv);
+    gtk_init(@argc, @argv);
+
+    runApplication();
 
     // cleanup
-    gst_element_set_state(playbin, GST_STATE_NULL);
-    gst_object_unref(gpointer(playbin));
     gst_deinit();
 }
