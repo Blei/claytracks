@@ -206,6 +206,23 @@ private external destroyWidget(widget: Pointer[GtkWidget], data: gpointer) {
     gtk_widget_destroy(widget);
 }
 
+private external sortOrderBoxChanged(widget: Pointer[GtkComboBox], data: gpointer) {
+    ref player = Pointer[Player](data)^;
+
+    var active = gtk_combo_box_get_active(widget);
+
+    if (active < 0 or active >= EnumMemberCount(api.SortMethod))
+        return;
+
+    var method = intToEnum(api.SortMethod, active);
+    if (method != player.mixSearchParameters.sortMethod) {
+        player.mixSearchParameters.sortMethod = method;
+        player.mixSearchParameters.page = 1;
+        setCurrentMixes(player, api.getMixes(player.apiKey, player.mixSearchParameters));
+        gtk_widget_set_sensitive(Pointer[GtkWidget](player.listUI.prevButton), FALSE);
+    }
+}
+
 private external clickedReload(button: Pointer[GtkButton], data: gpointer) {
     ref player = Pointer[Player](data)^;
     setCurrentMixes(player, api.getMixes(player.apiKey, player.mixSearchParameters));
@@ -455,6 +472,21 @@ private runApplication() {
         Pointer[GtkWidget](player.listUI.mixListBox));
 
     setCurrentMixes(player, api.getMixes(player.apiKey, player.mixSearchParameters));
+
+    var searchBox = gtk_hbox_new(FALSE, 10);
+    gtk_box_pack_start(Pointer[GtkBox](listBox), Pointer[GtkWidget](searchBox),
+        FALSE, FALSE, 0u);
+
+    var sortOrderBox = Pointer[GtkComboBoxText](gtk_combo_box_text_new());
+    ..for (i in staticIntegers(#EnumMemberCount(api.SortMethod))) {
+        var name = EnumMemberName(api.SortMethod, i);
+        gtk_combo_box_text_append_text(sortOrderBox, cstring(name));
+    }
+    gtk_combo_box_set_active(Pointer[GtkComboBox](sortOrderBox), 0);
+    gSignalConnect(sortOrderBox, cstring("changed"),
+        GCallback(sortOrderBoxChanged), gpointer(@player));
+    gtk_box_pack_start(Pointer[GtkBox](searchBox), Pointer[GtkWidget](sortOrderBox),
+        FALSE, FALSE, 0u);
 
     var pageBox = gtk_hbox_new(FALSE, 10);
     gtk_box_pack_start(Pointer[GtkBox](listBox), Pointer[GtkWidget](pageBox),

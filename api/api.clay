@@ -36,7 +36,7 @@ private reportingUrl(apiKey, mixId, trackId) {
         ++ "&api_key=" ++ apiKey));
 }
 
-enum SortMethod ( recent, hot, popular, random );
+enum SortMethod ( recent, hot, popular );
 
 record MixSearchParameters (
     page: SizeT,
