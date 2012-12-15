@@ -35,6 +35,9 @@ private var iconFile = "8tracks-icon.jpg";
 private alias LIST_PAGE = 0;
 private alias PLAY_PAGE = 1;
 
+// The size of the mix images in the mixes list
+private alias LIST_IMAGE_SIZE = 133;
+
 record ListUI (
     // The `Player` pointer is used in some callbacks
     currentMixList: Vector[Tuple[Pointer[Player], api.Mix]],
@@ -370,6 +373,8 @@ private addMixToContainer(ref mixTuple, image, container) {
     var imageWidget =
         if (null?(image)) gtk_image_new_from_stock(cstring("gtk-missing-image"), GTK_ICON_SIZE_DIALOG)
         else gtk_image_new_from_pixbuf(image);
+    // Set a minimum size. Mixes that don't set an image stand out otherwise
+    gtk_widget_set_size_request(imageWidget, LIST_IMAGE_SIZE, LIST_IMAGE_SIZE);
     gtk_box_pack_end(Pointer[GtkBox](hbox), Pointer[GtkWidget](imageWidget),
         FALSE, FALSE, UInt32(0));
 
@@ -393,7 +398,9 @@ private setCurrentMixes(ref player, mixes) {
     for (i in range(size(mixes))) {
         push(mixList, [@player, mixes[i]]);
         addMixToContainer(mixList[i], images[i], player.listUI.mixListBox);
-        g_object_unref(images[i]);
+        if (not null?(images[i])) {
+            g_object_unref(images[i]);
+        }
     }
 
     gtk_widget_show_all(Pointer[GtkWidget](player.listUI.mixListBox));
