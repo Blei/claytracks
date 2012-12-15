@@ -40,6 +40,9 @@ record ListUI (
     currentMixList: Vector[Tuple[Pointer[Player], api.Mix]],
     mixListBox: Pointer[GtkBox],
     scrolledWindow: Pointer[GtkScrolledWindow],
+
+    nextButton: Pointer[GtkButton],
+    prevButton: Pointer[GtkButton],
 );
 
 record PlayUI (
@@ -209,6 +212,9 @@ private external clickedPreviousPage(button: Pointer[GtkButton], data: gpointer)
     ref player = Pointer[Player](data)^;
     if (player.mixSearchParameters.page > 1) {
         player.mixSearchParameters.page -: 1;
+        if (player.mixSearchParameters.page == 1) {
+            gtk_widget_set_sensitive(Pointer[GtkWidget](player.listUI.prevButton), FALSE);
+        }
         setCurrentMixes(player, api.getMixes(player.apiKey, player.mixSearchParameters));
         scrollUp(player.listUI.scrolledWindow);
     }
@@ -216,7 +222,12 @@ private external clickedPreviousPage(button: Pointer[GtkButton], data: gpointer)
 
 private external clickedNextPage(button: Pointer[GtkButton], data: gpointer) {
     ref player = Pointer[Player](data)^;
+
     player.mixSearchParameters.page +: 1;
+    if (player.mixSearchParameters.page > 1) {
+        gtk_widget_set_sensitive(Pointer[GtkWidget](player.listUI.prevButton), TRUE);
+    }
+
     setCurrentMixes(player, api.getMixes(player.apiKey, player.mixSearchParameters));
     scrollUp(player.listUI.scrolledWindow);
 }
@@ -442,11 +453,14 @@ private runApplication() {
     gtk_box_pack_start(Pointer[GtkBox](listBox), Pointer[GtkWidget](pageBox),
         FALSE, FALSE, 0u);
 
-    var previousPageButton = gtk_button_new_with_label(cstring("Previous Page"));
+    var previousPageButton = Pointer[GtkButton](gtk_button_new_with_label(cstring("Previous Page")));
     gtk_box_pack_start(Pointer[GtkBox](pageBox), Pointer[GtkWidget](previousPageButton),
         FALSE, FALSE, 0u);
     gSignalConnect(previousPageButton, cstring("clicked"),
         GCallback(clickedPreviousPage), gpointer(@player));
+    // Turned off at the start, already on page 1
+    gtk_widget_set_sensitive(Pointer[GtkWidget](previousPageButton), FALSE);
+    player.listUI.prevButton = previousPageButton;
 
     var reloadButton = gtk_button_new_with_label(cstring("Reload List"));
     gtk_box_pack_start(Pointer[GtkBox](pageBox), Pointer[GtkWidget](reloadButton),
@@ -454,11 +468,12 @@ private runApplication() {
     gSignalConnect(reloadButton, cstring("clicked"),
         GCallback(clickedReload), gpointer(@player));
 
-    var nextPageButton = gtk_button_new_with_label(cstring("Next Page"));
+    var nextPageButton = Pointer[GtkButton](gtk_button_new_with_label(cstring("Next Page")));
     gtk_box_pack_end(Pointer[GtkBox](pageBox), Pointer[GtkWidget](nextPageButton),
         FALSE, FALSE, 0u);
     gSignalConnect(nextPageButton, cstring("clicked"),
         GCallback(clickedNextPage), gpointer(@player));
+    player.listUI.nextButton = nextPageButton;
 
     // Player control page
     var playBox = gtk_vbox_new(FALSE, 5);
