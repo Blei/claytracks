@@ -218,25 +218,20 @@ private external sortOrderBoxChanged(widget: Pointer[GtkComboBox], data: gpointe
     if (method != player.mixSearchParameters.sortMethod) {
         player.mixSearchParameters.sortMethod = method;
         player.mixSearchParameters.page = 1;
-        setCurrentMixes(player, api.getMixes(player.apiKey, player.mixSearchParameters));
-        gtk_widget_set_sensitive(Pointer[GtkWidget](player.listUI.prevButton), FALSE);
+        updateCurrentMixes(player);
     }
 }
 
 private external clickedReload(button: Pointer[GtkButton], data: gpointer) {
     ref player = Pointer[Player](data)^;
-    setCurrentMixes(player, api.getMixes(player.apiKey, player.mixSearchParameters));
+    updateCurrentMixes(player);
 }
 
 private external clickedPreviousPage(button: Pointer[GtkButton], data: gpointer) {
     ref player = Pointer[Player](data)^;
     if (player.mixSearchParameters.page > 1) {
         player.mixSearchParameters.page -: 1;
-        if (player.mixSearchParameters.page == 1) {
-            gtk_widget_set_sensitive(Pointer[GtkWidget](player.listUI.prevButton), FALSE);
-        }
-        setCurrentMixes(player, api.getMixes(player.apiKey, player.mixSearchParameters));
-        scrollUp(player.listUI.scrolledWindow);
+        updateCurrentMixes(player);
     }
 }
 
@@ -244,12 +239,7 @@ private external clickedNextPage(button: Pointer[GtkButton], data: gpointer) {
     ref player = Pointer[Player](data)^;
 
     player.mixSearchParameters.page +: 1;
-    if (player.mixSearchParameters.page > 1) {
-        gtk_widget_set_sensitive(Pointer[GtkWidget](player.listUI.prevButton), TRUE);
-    }
-
-    setCurrentMixes(player, api.getMixes(player.apiKey, player.mixSearchParameters));
-    scrollUp(player.listUI.scrolledWindow);
+    updateCurrentMixes(player);
 }
 
 private external registerPlayingSong(clock: Pointer[GstClock], time: GstClockTime,
@@ -403,6 +393,13 @@ private addMixToContainer(ref mixTuple, image, container) {
         GCallback(clickedPlay), gpointer(@mixTuple));
 }
 
+private updateCurrentMixes(ref player) {
+    setCurrentMixes(player, api.getMixes(player.apiKey, player.mixSearchParameters));
+    gtk_widget_set_sensitive(Pointer[GtkWidget](player.listUI.prevButton),
+        if (player.mixSearchParameters.page == 1) FALSE else TRUE);
+    scrollUp(player.listUI.scrolledWindow);
+}
+
 private setCurrentMixes(ref player, mixes) {
     // Remove old mixes
     gtk_container_foreach(Pointer[GtkContainer](player.listUI.mixListBox),
@@ -471,8 +468,6 @@ private runApplication() {
         Pointer[GtkScrolledWindow](player.listUI.scrolledWindow),
         Pointer[GtkWidget](player.listUI.mixListBox));
 
-    setCurrentMixes(player, api.getMixes(player.apiKey, player.mixSearchParameters));
-
     var searchBox = gtk_hbox_new(FALSE, 10);
     gtk_box_pack_start(Pointer[GtkBox](listBox), Pointer[GtkWidget](searchBox),
         FALSE, FALSE, 0u);
@@ -497,8 +492,6 @@ private runApplication() {
         FALSE, FALSE, 0u);
     gSignalConnect(previousPageButton, cstring("clicked"),
         GCallback(clickedPreviousPage), gpointer(@player));
-    // Turned off at the start, already on page 1
-    gtk_widget_set_sensitive(Pointer[GtkWidget](previousPageButton), FALSE);
     player.listUI.prevButton = previousPageButton;
 
     var reloadButton = gtk_button_new_with_label(cstring("Reload List"));
@@ -548,6 +541,8 @@ private runApplication() {
         FALSE, FALSE, 0u);
 
     gtk_widget_show_all(Pointer[GtkWidget](window));
+
+    updateCurrentMixes(player);
 
     gtk_main();
 }
