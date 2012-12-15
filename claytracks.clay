@@ -1,5 +1,8 @@
-import data.algorithms.(join);
+import data.algorithms.(
+    join,
+    split);
 import data.algorithms.strings.(trim);
+import data.sequences.(map);
 import data.strings.(String);
 import data.vectors.(Vector);
 import http.(
@@ -19,6 +22,7 @@ import glib.*;
 import gio.*;
 import gobject.*;
 import gtk.*;
+import gtk.keysyms.*;
 import gdkpixbuf.*;
 
 import api;
@@ -137,6 +141,12 @@ private skipTrack(player: Player) {
     changeTrack(player, maybeTrack);
 }
 
+[S when String?(S)]
+private parseTags(s: S) {
+    var tagFragments = split(s, ',');
+    return move(map(trim, tagFragments));
+}
+
 private external watchBus(bus: Pointer[GstBus], message: Pointer[GstMessage], data: gpointer) : gboolean {
 
     ref player = Pointer[Player](data)^;
@@ -204,6 +214,28 @@ private external clickedSkip(button: Pointer[GtkButton], data: gpointer) {
 
 private external destroyWidget(widget: Pointer[GtkWidget], data: gpointer) {
     gtk_widget_destroy(widget);
+}
+
+private external tagEntryKeyPressed(entry: Pointer[GtkEntry], event: Pointer[GdkEvent],
+        data: gpointer): gboolean {
+    ref player = Pointer[Player](data)^;
+
+    var type = event^.0;
+
+    assert(type == GDK_KEY_PRESS);
+
+    ref keyEvent: GdkEventKey = event^.8;
+
+    if (keyEvent.keyval == GDK_KEY_Return) {
+        var textPtr = gtk_entry_get_text(entry);
+        var tags = parseTags(CStringRef(textPtr));
+        player.mixSearchParameters.tagList = move(tags);
+        player.mixSearchParameters.page = 1;
+        updateCurrentMixes(player);
+        return TRUE;
+    }
+
+    return FALSE;
 }
 
 private external sortOrderBoxChanged(widget: Pointer[GtkComboBox], data: gpointer) {
@@ -471,6 +503,16 @@ private runApplication() {
     var searchBox = gtk_hbox_new(FALSE, 10);
     gtk_box_pack_start(Pointer[GtkBox](listBox), Pointer[GtkWidget](searchBox),
         FALSE, FALSE, 0u);
+
+    var tagsLabel = gtk_label_new(cstring("Tags"));
+    gtk_box_pack_start(Pointer[GtkBox](searchBox), Pointer[GtkWidget](tagsLabel),
+        FALSE, FALSE, 0u);
+
+    var tagEntry = Pointer[GtkEntry](gtk_entry_new());
+    gSignalConnect(tagEntry, cstring("key-press-event"),
+        GCallback(tagEntryKeyPressed), gpointer(@player));
+    gtk_box_pack_start(Pointer[GtkBox](searchBox), Pointer[GtkWidget](tagEntry),
+        TRUE, TRUE, 0u);
 
     var sortOrderBox = Pointer[GtkComboBoxText](gtk_combo_box_text_new());
     ..for (i in staticIntegers(#EnumMemberCount(api.SortMethod))) {
